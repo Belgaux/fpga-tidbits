@@ -112,7 +112,9 @@ object MainObj {
     "TestBRAM" -> {p => new TestBRAM(p)},
     "TestBRAMMasked" -> {p => new TestBRAMMasked(p)},
     "TestMemLatency" -> {p => new TestMemLatency(p)},
-    "TestGather" -> {p => new TestGather(p)}
+    "TestGather" -> {p => new TestGather(p)},
+    "TestBMVM" -> {p => new TestBMVM(p, 32, 4)},
+    "TestDRAM" -> {p => new TestDRAM(p)}
   )
 
   val platformMap: PlatformMap = Map(
@@ -156,7 +158,7 @@ object MainObj {
     // copy emulator driver and SW support files
     val regDrvRoot = "src/main/cpp/platform-wrapper-regdriver/"
     val files = Array("wrapperregdriver.h", "platform-tester.cpp",
-      "platform.h", "testerdriver.hpp")
+      "platform.h", "testerdriver.hpp", "Makefile")
     for(f <- files) { fileCopy(regDrvRoot + f, s"$targetDir/" + f) }
     val testRoot = "src/main/cpp/platform-wrapper-tests/"
     fileCopy(testRoot + accelName + ".cpp", s"$targetDir/main.cpp")
