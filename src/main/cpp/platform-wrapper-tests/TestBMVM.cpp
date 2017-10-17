@@ -26,7 +26,7 @@ void Run_AccelTest(WrapperRegDriver* platform) {
   cout << "Enter matrix dimensions (rows columns): ";
   cin >> r >> c;
   uint32_t resBytes =  r * sizeof(uint32_t);
-  uint32_t vectorBytes = ((c + wordSize -1)/wordSize)*wordSize/ 8; // Round to an integer number of wordsizes, in bytes
+  uint32_t vectorBytes = ((c + 64 -1)/64)*64/ 8; // Round to an integer number of wordsizes, in bytes
   uint32_t matrixBytes = vectorBytes * r; // There will be stride
   uint32_t stride = vectorBytes;
   
@@ -81,17 +81,23 @@ void Run_AccelTest(WrapperRegDriver* platform) {
   t.set_addrR((AccelDblReg) dramBufferResult);
   t.set_numRows(r);
   t.set_numCols(c);
-  t.set_stride(stride*8);
+  t.set_stride(stride);
 
-  cout<<"Debug before start: "<< t.get_debug() <<endl;
-
-  // Start
   t.set_start(1);
 
-  usleep(1000000);
-  cout<<"Debug after start: " << t.get_debug() <<endl;
-  cout<<"Error: "<<t.get_error()<<endl;
-  
+  while (t.get_finished() != 1);
+
+  uint64_t *result = new uint64_t[r];
+  platform->copyBufferAccelToHost(dramBufferResult, result, r*sizeof(uint32_t));
+  for (int i = 0; i < r; ++i)
+    cout << result[i] << " ";
+  cout << endl;
+
+  platform->deallocAccelBuffer(dramBufferVector);
+  platform->deallocAccelBuffer(dramBufferMatrix);
+  platform->deallocAccelBuffer(dramBufferResult);
+
+  t.set_start(0);  
 }
 
 
