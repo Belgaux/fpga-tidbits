@@ -20,13 +20,13 @@ void Run_AccelTest(WrapperRegDriver* platform) {
   std::mt19937_64 generator (seed);
   std::uniform_int_distribution<uint32_t> distribution(0, 1);
 
-  int wordSize = 32; // Assume this to be the one used in the accelerator
+  int wordSize = 64; // Assume this to be the one used in the accelerator
   
   uint32_t r, c;
   cout << "Enter matrix dimensions (rows columns): ";
   cin >> r >> c;
   uint32_t resBytes =  r * sizeof(uint32_t);
-  uint32_t vectorBytes = ((c + 64 -1)/64)*64/ 8; // Round to an integer number of wordsizes, in bytes
+  uint32_t vectorBytes = ((c + wordSize -1)/wordSize)*wordSize/ 8; // Round to an integer number of wordsizes, in bytes
   uint32_t matrixBytes = vectorBytes * r; // There will be stride
   uint32_t stride = vectorBytes;
   
@@ -69,7 +69,7 @@ void Run_AccelTest(WrapperRegDriver* platform) {
   // Allocate DRAM memory
   void * dramBufferVector = platform->allocAccelBuffer(vectorBytes);
   void * dramBufferMatrix = platform->allocAccelBuffer(matrixBytes);
-  void * dramBufferResult = platform->allocAccelBuffer(sizeof(uint32_t) * r);
+  void * dramBufferResult = platform->allocAccelBuffer(sizeof(uint64_t) * r);
   
   // Copy vectors to DRAM
   platform->copyBufferHostToAccel(vector, dramBufferVector, vectorBytes);
@@ -82,13 +82,14 @@ void Run_AccelTest(WrapperRegDriver* platform) {
   t.set_numRows(r);
   t.set_numCols(c);
   t.set_stride(stride);
+  cout << "Stride: " << stride << endl;
 
   t.set_start(1);
 
   while (t.get_finished() != 1);
 
   uint64_t *result = new uint64_t[r];
-  platform->copyBufferAccelToHost(dramBufferResult, result, r*sizeof(uint32_t));
+  platform->copyBufferAccelToHost(dramBufferResult, result, r*sizeof(uint64_t));
   for (int i = 0; i < r; ++i)
     cout << result[i] << " ";
   cout << endl;
