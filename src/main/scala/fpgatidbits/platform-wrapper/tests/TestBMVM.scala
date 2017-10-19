@@ -25,12 +25,18 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
     val addrR = UInt(INPUT, width=64)
     val numRows = UInt(INPUT, width=32)
     val numCols = UInt(INPUT, width=32)
-    val stride = UInt(INPUT, width=32) // Number of bits between start of consecutive rows. Should be a multiple of wordSize
+    val stride = UInt(INPUT, width=32) // Bytes per row
 
     val debug = UInt(OUTPUT, width=32)
     val error = Bool(OUTPUT)
     val finished = Bool(OUTPUT)
   }
+
+  // Iteration values for row and column segments
+  val row_count = Reg(init=UInt(0, width=32))
+  val col_count = Reg(init=UInt(0, width=32))
+  val global_row_count = Reg(init=UInt(0, width=32))
+  val col_chunk = UInt(wordSize/8)
 
   val reader = Module(new StreamReader(new StreamReaderParams(
     streamWidth = wordSize, fifoElems = 8, mem = p.toMemReqParams(),
@@ -40,25 +46,20 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
   val wr = Module(new StreamWriter(new StreamWriterParams(
     streamWidth = p.memDataBits, mem = p.toMemReqParams(), chanID = 0
   ))).io
-  wr.byteCount := UInt(numActiveVecs * p.memDataBits/8) 
-  wr.baseAddr := io.addrR
-  //wr.baseAddr := wr.baseAddr + wr.byteCount
-  wr.start := io.start
+  wr.byteCount := UInt(numActiveVecs * wordSize/8) 
+  wr.baseAddr := io.addrR + global_row_count * UInt(wordSize/8)
+  wr.start := Bool(false)
   wr.req <> io.memPort(1).memWrReq
   wr.wdat <> io.memPort(1).memWrDat
   io.memPort(1).memWrRsp <> wr.rsp
   plugMemReadPort(1)
 
-  // Iteration values for row and column segments
-  val row_count = Reg(init=UInt(0, width=32))
-  val col_count = Reg(init=UInt(0, width=32))
-
   val row_segment = Vec.fill(numActiveVecs) {Reg(init=UInt(0, wordSize))}
   val col_segment = Reg(init=UInt(0, width=wordSize))
-  val index = Reg(init=UInt(0, log2Up(numActiveVecs)+1))
-  val res_segment = Vec.fill(numActiveVecs) {Reg(init=UInt(0, 64))}
+  val index = Reg(init=UInt(0, width=32))
+  val res_segment = Vec.fill(numActiveVecs) {Reg(init=UInt(0, wordSize))}
 
-  val s_idle :: s_load_column_segment :: s_load_row_segment :: s_compute_res_segment :: s_store_res_segment :: s_finished :: Nil = Enum(UInt(), 6)
+  val s_idle :: s_debug_transition :: s_load_column_segment :: s_load_row_segment :: s_compute_res_segment :: s_store_res_segment :: s_finished :: Nil = Enum(UInt(), 7)
   val state = Reg(init=UInt(s_idle))
 
   // Default values
@@ -68,8 +69,8 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
   reader.out.ready := Bool(false)
 
   reader.start := io.start
-  reader.baseAddr := io.addrV
-  reader.byteCount := UInt(wordSize/8)
+  reader.baseAddr := io.addrV + col_count
+  reader.byteCount := col_chunk
   reader.req <> io.memPort(0).memRdReq
   io.memPort(0).memRdRsp <> reader.rsp
   plugMemWritePort(0)
@@ -79,17 +80,15 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
     intr.in(i).bits := res_segment(i)  
     intr.in(i).valid := Bool(false)
   }
+  intr.out <> wr.in
 
-  val sg = Module(new SequenceGenerator(p.memDataBits)).io
-  sg.start := io.start
-  sg.init := UInt(1)
-  sg.step := UInt(0)
-  sg.count := UInt(numActiveVecs)
+  val row_done = Bool()
+  row_done := col_count === io.stride
 
-  StreamRepeatElem(intr.out, sg.seq) <> wr.in
-
-  switch(state){
+  
+  switch(state) {
     is(s_idle){
+      global_row_count := UInt(0)
       row_count := UInt(0)
       col_count := UInt(0)
       when (io.start) { 
@@ -97,8 +96,23 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
       }
     }
 
+    is(s_debug_transition) {
+      
+      col_count := Mux(row_done, UInt(0), col_count)
+      global_row_count := Mux(row_done, global_row_count + UInt(numActiveVecs),
+        global_row_count)
+      row_count := Mux(row_done, row_count, global_row_count)
+
+      // flushing reader
+      reader.start := Bool(false)
+      reader.out.ready := Bool(true)
+      state := s_load_column_segment
+    
+    }
+
     is(s_load_column_segment){
       reader.out.ready := Bool(true)
+      reader.baseAddr := io.addrV + col_count
       when (reader.out.valid) {
         col_segment := reader.out.bits
         state := s_load_row_segment
@@ -106,51 +120,68 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
       }
     }
     is(s_load_row_segment) {
-      reader.baseAddr := io.addrM + io.stride * row_count + col_count
-      reader.out.ready := Bool(true)
-      when (reader.out.valid) {
-        when (index != UInt(numActiveVecs)) {
+      when(index != UInt(numActiveVecs)) {
+        reader.out.ready := Bool(true)
+        reader.baseAddr := io.addrM + io.stride * row_count + col_count
+        when(reader.out.valid) {
           row_segment(index) := reader.out.bits
-          row_count := row_count + UInt(1)
           index := index + UInt(1)
+          row_count := row_count + UInt(1)
           reader.start := Bool(false)
         }
-        .otherwise {
-          for (i <- 0 until numActiveVecs) {
-            printf("%b\n", row_segment(i))
-          }
-          printf("col_count=%d\n", col_count)
-          col_count := col_count + UInt(wordSize/8)
-          index := UInt(0)
+      }.otherwise { // Done with one row chunk
+        index := UInt(0)
 
-          for (i <- 0 until numActiveVecs) {
-            res_segment(i) := res_segment(i) + PopCount(col_segment & row_segment(i))
-          }
-          state := s_store_res_segment
-        }
+        col_count := col_count + col_chunk
+        
+        state := s_compute_res_segment
       }
     }
 
     is(s_compute_res_segment){
-
+/*
+      printf("%b\n", col_segment)
+      printf("col_count=%d\n", col_count)
+      printf("row_count=%d\n", row_count)
+      printf("global_row_count=%d\n", global_row_count)
+      for (i <- 0 until numActiveVecs) {
+        printf("%b\n", row_segment(i))
+      }
+*/
+      for (i <- 0 until numActiveVecs) {
+        res_segment(i) := res_segment(i) + PopCount(col_segment & row_segment(i))
+      }
+      state := s_store_res_segment
     }
 
     is(s_store_res_segment) {
-      when (index != UInt(numActiveVecs)) {
-        intr.in(index).valid := Bool(true)
-        index := index + UInt(1)
+      wr.start := Bool(true)
+      when (index === UInt(numActiveVecs)) {
+        when (wr.finished) {
+          index := UInt(0)
+
+          state := Mux(col_count === io.stride 
+            && global_row_count === io.numRows - UInt(numActiveVecs),
+            s_finished, s_debug_transition)
+          
+          for (i <- 0 until numActiveVecs) {
+            res_segment(i) := Mux(col_count === io.stride,
+              UInt(0), res_segment(i)) 
+          } 
+        }
       }
       .otherwise {
-        when (wr.finished) { state := s_finished }
+        intr.in(index).valid := Bool(true)
+        when (wr.in.ready) {
+          index := index + UInt(1)
+          //printf("intr.out.bits=%d\n", intr.out.bits)
+        }
       }
     }
 
     is(s_finished){
       io.finished := Bool(true)
       when (!io.start) {
-        for (i<-0 until numActiveVecs) {
-          printf("%d\n", res_segment(i))
-        }
         state := s_idle 
       }
     }

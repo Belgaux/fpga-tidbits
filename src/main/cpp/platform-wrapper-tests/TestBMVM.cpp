@@ -3,6 +3,7 @@
 #include <chrono>
 #include <random>
 #include <unistd.h>
+#include <string.h>
 
 using namespace std;
 #include "platform.h"
@@ -25,7 +26,7 @@ void Run_AccelTest(WrapperRegDriver* platform) {
   uint32_t r, c;
   cout << "Enter matrix dimensions (rows columns): ";
   cin >> r >> c;
-  uint32_t resBytes =  r * sizeof(uint32_t);
+  uint32_t resBytes =  r * sizeof(uint64_t);
   uint32_t vectorBytes = ((c + wordSize -1)/wordSize)*wordSize/ 8; // Round to an integer number of wordsizes, in bytes
   uint32_t matrixBytes = vectorBytes * r; // There will be stride
   uint32_t stride = vectorBytes;
@@ -56,20 +57,21 @@ void Run_AccelTest(WrapperRegDriver* platform) {
   }
   cout<<endl;
 
-  uint32_t expectedResult[r];
-  cout<<"Expected result: "<<endl;
+  uint64_t expectedResult[r];
+  cout<<"Expected result:" << endl;
   for (int i = 0; i < r; ++i){
     expectedResult[i] = 0;
     for(int j = 0; j < vectorBytes; j++){
       expectedResult[i] += __builtin_popcount(vector[j] & matrix[i*stride + j]);
     }
-    cout<<expectedResult[i]<<endl;
+    cout<<expectedResult[i] << " ";
   }
+  cout << endl;
 
   // Allocate DRAM memory
   void * dramBufferVector = platform->allocAccelBuffer(vectorBytes);
   void * dramBufferMatrix = platform->allocAccelBuffer(matrixBytes);
-  void * dramBufferResult = platform->allocAccelBuffer(sizeof(uint64_t) * r);
+  void * dramBufferResult = platform->allocAccelBuffer(resBytes);
   
   // Copy vectors to DRAM
   platform->copyBufferHostToAccel(vector, dramBufferVector, vectorBytes);
@@ -82,17 +84,20 @@ void Run_AccelTest(WrapperRegDriver* platform) {
   t.set_numRows(r);
   t.set_numCols(c);
   t.set_stride(stride);
-  cout << "Stride: " << stride << endl;
 
   t.set_start(1);
 
   while (t.get_finished() != 1);
 
   uint64_t *result = new uint64_t[r];
-  platform->copyBufferAccelToHost(dramBufferResult, result, r*sizeof(uint64_t));
+  platform->copyBufferAccelToHost(dramBufferResult, result, resBytes);
+  cout << "DRAM:" << endl;
   for (int i = 0; i < r; ++i)
     cout << result[i] << " ";
   cout << endl;
+
+  int succ = memcmp(expectedResult, result, resBytes);
+  cout << "memcmp: " << succ << endl;
 
   platform->deallocAccelBuffer(dramBufferVector);
   platform->deallocAccelBuffer(dramBufferMatrix);
