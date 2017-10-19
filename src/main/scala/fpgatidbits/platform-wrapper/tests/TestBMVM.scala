@@ -54,10 +54,12 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
   io.memPort(1).memWrRsp <> wr.rsp
   plugMemReadPort(1)
 
-  val row_segment = Vec.fill(numActiveVecs) {Reg(init=UInt(0, wordSize))}
+  val row_segment = Mem(UInt(width=wordSize), numActiveVecs)
+  //val row_segment = Vec.fill(numActiveVecs) {Reg(init=UInt(0, wordSize))}
   val col_segment = Reg(init=UInt(0, width=wordSize))
+  val res_segment = Mem(UInt(width=wordSize), numActiveVecs)
+  //val res_segment = Vec.fill(numActiveVecs) {Reg(init=UInt(0, wordSize))}
   val index = Reg(init=UInt(0, width=32))
-  val res_segment = Vec.fill(numActiveVecs) {Reg(init=UInt(0, wordSize))}
 
   val s_idle :: s_debug_transition :: s_load_column_segment :: s_load_row_segment :: s_compute_res_segment :: s_store_res_segment :: s_finished :: Nil = Enum(UInt(), 7)
   val state = Reg(init=UInt(s_idle))
@@ -75,9 +77,10 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
   io.memPort(0).memRdRsp <> reader.rsp
   plugMemWritePort(0)
 
+  // Combine result registers into a single stream that we can pass to writer 
   val intr = Module(new StreamInterleaver(numActiveVecs, UInt())).io
   for (i <- 0 until numActiveVecs) {
-    intr.in(i).bits := res_segment(i)  
+    intr.in(i).bits := res_segment(i)
     intr.in(i).valid := Bool(false)
   }
   intr.out <> wr.in
@@ -88,6 +91,7 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
   
   switch(state) {
     is(s_idle){
+      reader.start := Bool(false)
       global_row_count := UInt(0)
       row_count := UInt(0)
       col_count := UInt(0)
@@ -105,7 +109,7 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
 
       // flushing reader
       reader.start := Bool(false)
-      reader.out.ready := Bool(true)
+      //reader.out.ready := Bool(true)
       state := s_load_column_segment
     
     }
@@ -130,6 +134,7 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
           reader.start := Bool(false)
         }
       }.otherwise { // Done with one row chunk
+        reader.start := Bool(false)
         index := UInt(0)
 
         col_count := col_count + col_chunk
@@ -151,10 +156,12 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
       for (i <- 0 until numActiveVecs) {
         res_segment(i) := res_segment(i) + PopCount(col_segment & row_segment(i))
       }
+      reader.start := Bool(false)
       state := s_store_res_segment
     }
 
     is(s_store_res_segment) {
+      reader.start := Bool(false)
       wr.start := Bool(true)
       when (index === UInt(numActiveVecs)) {
         when (wr.finished) {
@@ -181,6 +188,7 @@ class TestBMVM(p: PlatformWrapperParams, _wordSize:Int, _numActiveVecs:Int) exte
 
     is(s_finished){
       io.finished := Bool(true)
+      reader.start := Bool(false)
       when (!io.start) {
         state := s_idle 
       }
