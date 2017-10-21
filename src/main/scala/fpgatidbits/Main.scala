@@ -158,7 +158,10 @@ object MainObj {
     // copy emulator driver and SW support files
     val regDrvRoot = "src/main/cpp/platform-wrapper-regdriver/"
     val files = Array("wrapperregdriver.h", "platform-tester.cpp",
-      "platform.h", "testerdriver.hpp", "Makefile", "recompile.sh")
+      "platform.h", "testerdriver.hpp")
+    val utilsRoot = "src/main/utils/"
+    val utilsFiles = Array("Makefile", "recompile.sh", "bitserial.h", "bitserial.cpp")
+    for(f <- utilsFiles) { fileCopy(utilsRoot + f, s"$targetDir/" + f) }
     for(f <- files) { fileCopy(regDrvRoot + f, s"$targetDir/" + f) }
     val testRoot = "src/main/cpp/platform-wrapper-tests/"
     fileCopy(testRoot + accelName + ".cpp", s"$targetDir/main.cpp")
