@@ -8,116 +8,148 @@
 #include <cstdio>
 #include <bitset>
 #include "bitserial.h"
+#include "bitpacking.h"
 
 using namespace std;
 #include "platform.h"
 
 #include "TestBMVM.hpp"
-// Testing reading from DRAM, multiplying vectors, writing back
-void Run_AccelTest(WrapperRegDriver* platform) {
+void Run_TestBMVM(WrapperRegDriver* platform) 
+{
   TestBMVM t(platform);
-
-  cout << "Signature: " << hex << t.get_signature() << dec << endl;
+  //cout << "Signature: " << hex << t.get_signature() << dec << endl;
 
   // Random 0/1 generator
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
   std::mt19937_64 generator (seed);
-  std::uniform_int_distribution<uint32_t> distribution(0, 1);
+  std::uniform_int_distribution<uint64_t> distribution(0, 1);
 
-  int wordSize = 64; // Assume this to be the one used in the accelerator
+  // might use this loop for channels eventually?
+  while (1) {
+    uint32_t r, c;
+    cout << "row, col:" << endl;
+    cin >> r >> c;
+    if (r == 0 || c == 0)
+      break;
+    uint32_t word_size = 64;
+    uint32_t result_bytes = r * sizeof(int64_t);
+    uint32_t vector_bytes = c * sizeof(int64_t);
+    uint32_t matrix_bytes = c * r * sizeof(int64_t);
+    uint32_t stride = vector_bytes;
 
-  uint32_t r, c;
-  cout << "Enter matrix dimensions (rows columns): ";
-  cin >> r >> c;
-  uint32_t resBytes =  r * sizeof(uint64_t);
-  uint32_t vectorBytes = ((c + wordSize -1)/wordSize)*wordSize/ 8; // Round to an integer number of wordsizes, in bytes
-  uint32_t matrixBytes = vectorBytes * r; // There will be stride
-  uint32_t stride = vectorBytes;
+    matrix_t *W = (matrix_t *) malloc(sizeof(matrix_t));
+    W->rows = r;
+    W->cols = c;
+    W->bit_depth = 2;
+    W->M = (int64_t *) malloc(sizeof(int64_t) * r * c);
 
-  // Populate arrays
-  uint8_t matrix[matrixBytes];
-  uint8_t vector[vectorBytes];
-  cout<<"Matrix: "<<endl;
-  for(int i = 0; i < r; ++i){
-    for(int j = 0; j < vectorBytes; j++){
-      matrix[i*stride + j] = 0;
-      for(int k = 0; k < 8 && 8*j + k < c; k++){
-        matrix[i*stride + j] |= (distribution(generator) << k);
-        cout<<((matrix[i*stride + j] & (1<<k))>>k);
+    matrix_t *A = (matrix_t *) malloc(sizeof(matrix_t));
+    A->rows = c;
+    A->cols = 1;
+    A->bit_depth = 2;
+    A->M = (int64_t *) malloc(sizeof(int64_t) * c);
+
+    matrix_t *R = (matrix_t *) malloc(sizeof(matrix_t));
+    R->rows = W->rows;
+    R->cols = 1;
+    R->M = (int64_t *) calloc(R->rows, sizeof(int64_t));
+
+    fill_matrix(W, 1);
+    fill_matrix(A, 1);
+
+    matrix_t *software_result = software_GEMM(W, A);
+    printf("Software gemm (expected result):\n");
+    for (int i = 0; i < software_result->rows; ++i)
+      printf("%ld ", software_result->M[i]);
+    printf("\n\n");
+
+
+    // extract bitplanes and feed them to the FPGA
+    for (int w_depth = 0; w_depth < W->bit_depth; ++w_depth) {
+      for (int a_depth = 0; a_depth < A->bit_depth; ++a_depth) {
+  
+        int signW = w_depth == W->bit_depth - 1 ? -1 : 1;
+        int signA = a_depth == A->bit_depth - 1 ? -1 : 1;
+        int significance = (1 << (w_depth + a_depth));
+        int alpha = significance * signW * signA;
+
+        matrix_t *A_bitplane = extract_bitplane(A, a_depth);
+        matrix_t *W_bitplane = extract_bitplane(W, w_depth);
+
+        printf("W%dA%d:\n", w_depth, a_depth);
+
+        // Allocate DRAM memory
+        void * dram_buffer_vec = platform->allocAccelBuffer(vector_bytes);
+        void * dram_buffer_mat = platform->allocAccelBuffer(matrix_bytes);
+        void * dram_buffer_res = platform->allocAccelBuffer(result_bytes);
+
+        // Copy vectors to DRAM
+        platform->copyBufferHostToAccel(A_bitplane->M, dram_buffer_vec, vector_bytes);
+        platform->copyBufferHostToAccel(W_bitplane->M, dram_buffer_mat, matrix_bytes);
+
+        //Initialize 
+        t.set_addrV((AccelDblReg) dram_buffer_vec);
+        t.set_addrM((AccelDblReg) dram_buffer_mat);
+        t.set_addrR((AccelDblReg) dram_buffer_res);
+        t.set_numRows(r);
+        t.set_numCols(c);
+        t.set_stride(stride);
+
+        t.set_start(1);
+
+        while (t.get_finished() != 1);
+
+        int64_t *result = (int64_t *) malloc(sizeof(int64_t) * R->rows);
+        platform->copyBufferAccelToHost(dram_buffer_res, result, result_bytes);
+        cout << "alpha: " << alpha << endl;
+        cout << "temp DRAM:" << endl;
+        for (int i = 0; i < R->rows; ++i) {
+          result[i] *= alpha; // temporary scale with alpha outside fpga
+          cout << result[i] << " ";
+          R->M[i] += result[i];
+        }
+        cout << endl;
+
+        cout << "temp R:" << endl;
+        for (int i = 0; i < R->rows; ++i) {
+          cout << R->M[i] << " ";
+        }
+        cout << endl << endl;
+
+        platform->deallocAccelBuffer(dram_buffer_vec);
+        platform->deallocAccelBuffer(dram_buffer_mat);
+        platform->deallocAccelBuffer(dram_buffer_res);
+        t.set_start(0);  
+        
+        free(result);
+        free_matrix(A_bitplane);
+        free_matrix(W_bitplane);
       }
     }
-    cout<<endl;
+
+    cout << "FINAL RESULT" << endl;
+    for (int i = 0; i < R->rows; ++i)
+      cout << R->M[i] << " ";
+    cout << endl;
+
+    int succ = memcmp(software_result->M, R->M, result_bytes);
+    cout << "memcmp: " << succ << endl;
+
+    free_matrix(A);
+    free_matrix(W);
+    free_matrix(R);
+    free_matrix(software_result);
   }
-  cout<<endl;
-
-  cout<<"Vector: "<<endl;
-  for (int i = 0; i < vectorBytes; ++i){
-    vector[i] = 0;
-    for(int j = 0; j < 8 && 8*i + j < c; j++){
-      vector[i] |= (distribution(generator) << j);
-      cout<<((vector[i] & (1<<j)) >> j);
-    }
-  }
-  cout<<endl;
-
-  uint64_t expectedResult[r];
-  cout<<"Expected result:" << endl;
-  for (int i = 0; i < r; ++i){
-    expectedResult[i] = 0;
-    for(int j = 0; j < vectorBytes; j++){
-      expectedResult[i] += __builtin_popcount(vector[j] & matrix[i*stride + j]);
-    }
-    cout<<expectedResult[i] << " ";
-  }
-  cout << endl;
-
-  // Allocate DRAM memory
-  void * dramBufferVector = platform->allocAccelBuffer(vectorBytes);
-  void * dramBufferMatrix = platform->allocAccelBuffer(matrixBytes);
-  void * dramBufferResult = platform->allocAccelBuffer(resBytes);
-
-  // Copy vectors to DRAM
-  platform->copyBufferHostToAccel(vector, dramBufferVector, vectorBytes);
-  platform->copyBufferHostToAccel(matrix, dramBufferMatrix, matrixBytes);
-
-  //Initialize 
-  t.set_addrV((AccelDblReg) dramBufferVector);
-  t.set_addrM((AccelDblReg) dramBufferMatrix);
-  t.set_addrR((AccelDblReg) dramBufferResult);
-  t.set_numRows(r);
-  t.set_numCols(c);
-  t.set_stride(stride);
-
-  t.set_start(1);
-
-  while (t.get_finished() != 1);
-
-  uint64_t *result = new uint64_t[r];
-  platform->copyBufferAccelToHost(dramBufferResult, result, resBytes);
-  cout << "DRAM:" << endl;
-  for (int i = 0; i < r; ++i)
-  cout << result[i] << " ";
-  cout << endl;
-
-  int succ = memcmp(expectedResult, result, resBytes);
-  cout << "memcmp: " << succ << endl;
-
-  platform->deallocAccelBuffer(dramBufferVector);
-  platform->deallocAccelBuffer(dramBufferMatrix);
-  platform->deallocAccelBuffer(dramBufferResult);
-
-  t.set_start(0);  
 }
-
 
 int main()
 {
   WrapperRegDriver * platform = initPlatform();
 
-  //Run_AccelTest(platform);
-  test_matrix_stuff();
+  Run_TestBMVM(platform);
+  //test_matrix_stuff();
+  //bitpack_test();
 
   deinitPlatform(platform);
-
-return 0;
+  return 0;
 }

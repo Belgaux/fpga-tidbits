@@ -45,6 +45,13 @@ matrix_t* extract_bitplane(matrix_t *M, int depth) {
   return r;
 }
 
+void fill_matrix(matrix_t *M, int64_t value)
+{
+  for (int i = 0; i < M->rows; ++i)
+    for (int j = 0; j < M->cols; ++j)
+      M->M[i*M->cols + j] = value;
+}
+
 matrix_t* software_GEMM(matrix_t *W, matrix_t *A) {
   matrix_t *result = (matrix_t *) malloc(sizeof(matrix_t));
   result->rows = W->rows;
@@ -82,9 +89,9 @@ matrix_t* software_GEMM(matrix_t *W, matrix_t *A) {
 }
 
 void test_matrix_stuff() {
+#define N 128
   matrix_t *mat1 = (matrix_t *) malloc(sizeof(matrix_t));
-#define N 1024
-  mat1->rows = 256;
+  mat1->rows = 8;
   mat1->cols = N;
   mat1->bit_depth = 2;
   mat1->M = (int64_t *) malloc(sizeof(int64_t) * mat1->rows * mat1->cols);
@@ -102,7 +109,7 @@ void test_matrix_stuff() {
     }
   }
   for (int i = 0; i < vec1->rows; ++i)
-    vec1->M[i] = -1;
+    vec1->M[i] = 1;
 
   printf("W:\n");
   print_matrix(mat1);

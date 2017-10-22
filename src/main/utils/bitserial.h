@@ -11,6 +11,7 @@ typedef struct matrix_t {
 void print_matrix(matrix_t *M);
 void free_matrix(matrix_t *M);
 void test_matrix_stuff();
+void fill_matrix(matrix_t *M, int64_t value);
 
 matrix_t* extract_bitplane(matrix_t *M, int depth);
 matrix_t* software_GEMM(matrix_t *W, matrix_t *A);
