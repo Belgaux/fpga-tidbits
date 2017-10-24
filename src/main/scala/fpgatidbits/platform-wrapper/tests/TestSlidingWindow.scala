@@ -13,17 +13,16 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
 
   val io = new GenericAcceleratorIF(numMemPorts, p){
     // Inputs
-    val imageSizeX =  UInt(INPUT, width=32)
-    val imageSizeY =  UInt(INPUT, width=32)
+    val numCols =     UInt(INPUT, width=32)
+    val numRows =     UInt(INPUT, width=32)
     val numChannels = UInt(INPUT, width=32)
     val stride =      UInt(INPUT, width=32)
     val windowSize =  UInt(INPUT, width=32) // Might want to tweakerino
     //val outChannels = UInt(INPUT, width=32)
     val addrImage =   UInt(INPUT, width=64)
     val addrResult =  UInt(INPUT, width=64)
-    //val addrWeights = UInt(INPUT, width=64)
+    val addr = UInt(INPUT, width=64)
     val start =       Bool(INPUT)
-
     // Outputs
     val finished = Bool(OUTPUT)
   }
@@ -58,12 +57,18 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
   }
 
   // Set initial state
-  val s_idle :: s_read :: s_lowering :: Nil = Enum(UInt(), 3) 
+  val s_idle :: s_read :: s_finished :: Nil = Enum(UInt(), 3) 
   val state = Reg(init=UInt(s_idle))
   
-  // Reader is default false
+  // Reader, and writer is default false
   val reader = initialize_reader(0) 
   val writer = initialize_writer(1)
+  reader.out <> writer.in
+  
+  // For checking how many rows we have read
+  val localRowCount = UInt(width=32)
+  val globalRowCount = UInt(width=32)
+
   switch (state){
     is(s_idle){
       when (io.start){
@@ -71,13 +76,17 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
       }
     }
     is(s_read){
-      reader.baseAddr := AddrWeights
-      reader.byteCount := windowsize * numChannels
+      reader.baseAddr := io.addrImage  
+      reader.byteCount := io.windowsize * io.numChannels
+      writer.baseAddr := io.addrResult
+      writer.start := Bool(true)
       reader.start := Bool(true)
-      reader.out <> writer.in 
+      when (reader.finished){
+          
+      }
     }
-    is(s_lowering){
-     
+    is(s_finished){
+       
     }
   }
 }
