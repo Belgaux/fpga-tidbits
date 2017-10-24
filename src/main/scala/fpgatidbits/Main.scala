@@ -114,7 +114,8 @@ object MainObj {
     "TestMemLatency" -> {p => new TestMemLatency(p)},
     "TestGather" -> {p => new TestGather(p)},
     "TestBMVM" -> {p => new TestBMVM(p, 64, 4)},
-    "TestDRAM" -> {p => new TestDRAM(p)}
+    "TestDRAM" -> {p => new TestDRAM(p)},
+    "TestBitplane" -> {p => new TestBitplane(p, 64, 4)}
   )
 
   val platformMap: PlatformMap = Map(

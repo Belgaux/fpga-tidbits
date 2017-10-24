@@ -8,7 +8,6 @@
 #include <cstdio>
 #include <bitset>
 #include "bitserial.h"
-#include "bitpacking.h"
 
 using namespace std;
 #include "platform.h"
@@ -17,7 +16,6 @@ using namespace std;
 void Run_TestBMVM(WrapperRegDriver* platform) 
 {
   TestBMVM t(platform);
-  //cout << "Signature: " << hex << t.get_signature() << dec << endl;
 
   // Random 0/1 generator
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();

@@ -1,6 +1,6 @@
 #!/bin/bash
 cd ..
-sbt "run e TestBMVM Tester"
-cd emu-TestBMVM/
+sbt "run e TestBitplane Tester"
+cd emu-TestBitplane
 make
-./app && cd .. && cd emu-TestBMVM
+./app && cd .. && cd emu-TestBitplane
