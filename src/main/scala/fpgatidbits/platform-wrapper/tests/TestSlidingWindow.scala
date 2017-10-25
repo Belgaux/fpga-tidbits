@@ -94,22 +94,25 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
                           (globalRowCount + localRowCount) * io.numCols * io.numChannels +
                           globalColCount)
       reader.byteCount := io.windowSize * io.numChannels
-      writer.baseAddr := io.addrResult + (resultColCount * windowSizeSquared) 
+      writer.baseAddr := io.addrResult + (resultColCount * windowSizeSquared) * io.numChannels
+      writer.byteCount := windowSizeSquared * io.numChannels
       writer.start := Bool(true)
       reader.start := Bool(true)
+      when (writer.finished === Bool(true)){
+        writer.start := Bool(false)
+        resultColCount := resultColCount + UInt(1)
+      }
       when (reader.finished){
         when (localRowCount === io.windowSize - UInt(1)){
-          resultColCount := resultColCount + UInt(1)
-          writer.start := Bool(false)
           when (globalColCount === io.numCols - io.windowSize - UInt(1)){
-            globalRowCount := globalRowCount + UInt(1)
-            localRowCount := globalRowCount + UInt(1)
+            globalRowCount := globalRowCount + io.stride
+            localRowCount := globalRowCount + io.stride
             globalColCount := UInt(0)
             when (globalRowCount === io.numRows - io.windowSize -UInt(1)){
               state := s_finished
             }
           }.otherwise{
-            globalColCount := globalColCount + UInt(1)
+            globalColCount := globalColCount + io.stride
           }
         }.otherwise{
           localRowCount := localRowCount + UInt(1)
