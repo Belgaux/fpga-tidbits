@@ -115,7 +115,7 @@ object MainObj {
     "TestGather" -> {p => new TestGather(p)},
     "TestBitserialGEMM" -> {p => new TestBitserialGEMM(p)}
     "TestBMVM" -> {p => new TestBMVM(p, 64, 4)},
-    "TestDRAM" -> {p => new TestDRAM(p)}
+    "TestDRAM" -> {p => new TestDRAM(p)},
     "TestSlidingWindow" -> {p => new TestSlidingWindow(p, 64)}
   )
 
