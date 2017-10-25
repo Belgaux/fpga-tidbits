@@ -31,7 +31,7 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
     * @note memwriteport is plugged
     * @note reader is default false
     */  
-  def initialize_reader(port: UInt) = {
+  def initialize_reader(port: Int) = {
     val reader = Module(new StreamReader(new StreamReaderParams(
       streamWidth = wordSize, fifoElems = 8, mem = p.toMemReqParams(),
       maxBeats = 1, chanID = 0, disableThrottle = true
@@ -43,7 +43,7 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
     reader
   }
 
-  def initialize_writer (port: UInt) = {
+  def initialize_writer (port: Int) = {
     val wr = Module(new StreamWriter(new StreamWriterParams(
       streamWidth = p.memDataBits, mem = p.toMemReqParams(), chanID = 0
     ))).io
@@ -91,21 +91,21 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
     }
     is(s_read){
       reader.baseAddr := (io.addrImage + 
-                          (globalRowCount + localRowCount) * numCols * numChannels +
+                          (globalRowCount + localRowCount) * io.numCols * io.numChannels +
                           globalColCount)
-      reader.byteCount := io.windowsize * io.numChannels
+      reader.byteCount := io.windowSize * io.numChannels
       writer.baseAddr := io.addrResult + (resultColCount * windowSizeSquared) 
       writer.start := Bool(true)
       reader.start := Bool(true)
       when (reader.finished){
-        when (localRowCount === windowSize - UInt(1)){
+        when (localRowCount === io.windowSize - UInt(1)){
           resultColCount := resultColCount + UInt(1)
           writer.start := Bool(false)
-          when (globalColCount === numCols - windowSize - UInt(1)){
+          when (globalColCount === io.numCols - io.windowSize - UInt(1)){
             globalRowCount := globalRowCount + UInt(1)
             localRowCount := globalRowCount + UInt(1)
             globalColCount := UInt(0)
-            when (globalRowCount == numRows - windowSize -UInt(1)){
+            when (globalRowCount === io.numRows - io.windowSize -UInt(1)){
               state := s_finished
             }
           }.otherwise{
