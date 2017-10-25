@@ -115,6 +115,7 @@ object MainObj {
     "TestGather" -> {p => new TestGather(p)},
     "TestBMVM" -> {p => new TestBMVM(p, 64, 4)},
     "TestDRAM" -> {p => new TestDRAM(p)}
+    "TestSlidingWindow" -> {p => new TestSlidingWindow(p, 64)}
   )
 
   val platformMap: PlatformMap = Map(
