@@ -115,7 +115,8 @@ object MainObj {
     "TestGather" -> {p => new TestGather(p)},
     "TestBMVM" -> {p => new TestBMVM(p, 64, 4)},
     "TestDRAM" -> {p => new TestDRAM(p)},
-    "TestBitplane" -> {p => new TestBitplane(p, 64, 4)}
+    "TestBitplane" -> {p => new TestBitplane(p, 64, 4)},
+    "TestDotEngine" -> {p => new TestDotEngine(p)}
   )
 
   val platformMap: PlatformMap = Map(
