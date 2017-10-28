@@ -16,31 +16,46 @@ void Run_TestBitserial(WrapperRegDriver* platform)
 {
   TestBitserial t(platform);
 
-  int n = 16;
-  s32 w[n];
-  s32 a[n];
-  for (int i = 0; i < n; ++i) {
-    w[i] = -1;
-    a[i] = 1;
+  int r = 32;
+  int c = 32;
+  s32 w[r*c];
+  s32 a[c];
+  s32 e[r];
+  for (int i = 0; i < r; ++i) {
+    for (int j = 0; j < c; ++j) {
+      int ij = i*c + j;
+      w[ij] = -1;
+      a[j] = 1;
+      e[i] += w[ij] * a[j];
+    }
   }
+  printf("expected:\n");
+  for (int i = 0; i < r; ++i)
+    printf("%d ", e[i]);
+  printf("\n");
 
-  for (int i = 0; i < n; ++i) {
-    t.set_W(w[i]);
-    t.set_A(a[i]);
-    t.set_bitplane(1);
+
+  s32 res[r];
+  for (int i = 0; i < r; ++i) {
+    for (int j = 0; j < c; ++j) {
+      t.set_W(w[i*c + j]);
+      t.set_A(a[j]);
+      t.set_bitplane(1);
+      t.set_start(1);
+      while (t.get_done() != 1);
+      t.set_start(0);
+    }
+    t.set_bitplane(0);
     t.set_start(1);
     while (t.get_done() != 1);
+    res[i] = t.get_out();
     t.set_start(0);
   }
 
-  t.set_bitplane(0);
-  t.set_start(1);
-  while (t.get_done() != 1);
-
-  s32 res = t.get_out();
-  printf("result= %d\n", res);
-
-  t.set_start(0);
+  printf("result:\n");
+  for (int i = 0; i < r; ++i)
+    printf("%d ", res[i]);
+  printf("\n");
 }
 
 int main()

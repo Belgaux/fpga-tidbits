@@ -43,6 +43,9 @@ class Bitserial(word_size : Int, W_depth : Int, A_depth : Int) extends Module {
   switch (state) {
     is (s_idle) {
       tmp := SInt(0)
+      for (i <- 0 until num_PE) {
+        accs(i) := SInt(0)
+      }
       when (io.start && io.bitplane) { state := s_bitplane }
       .elsewhen (io.start && !io.bitplane) { state := s_running }
     }
@@ -72,7 +75,6 @@ class Bitserial(word_size : Int, W_depth : Int, A_depth : Int) extends Module {
               accs(index) - (PE(index).dout << UInt(i+j)),
               accs(index) + (PE(index).dout << UInt(i+j)))
 
-            PE(index).start := Bool(false)
           }
         }
         acc_index := UInt(0)
