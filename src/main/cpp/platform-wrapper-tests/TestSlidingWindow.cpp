@@ -23,19 +23,25 @@ void Run_TestSlidingWindow(WrapperRegDriver* platform)
   std::mt19937_64 generator (seed);
   std::uniform_int_distribution<uint8_t> distribution('0', '9');
   
-  
-  uint32_t numCols, numRows, numChannels, windowSize, stride;
+  const uint32_t wordSize = 8; // In bytes
+  const uint32_t numCols = 3, numRows = 3, numChannels = 1, windowSize = 2, stride = 1;
+  const uint32_t wordsPerPixel = (numChannels + wordSize - 1)/wordSize; // Assume one byte per channel value
+  const uint32_t numBytesPerPixel = wordsPerPixel * wordSize; 
+    
+  uint8_t image[numCols * numRows * numBytesPerPixel];
 
-  numCols = 10, numRows = 10, numChannels = 8, windowSize = 5, stride = 1;
-  uint8_t image[numCols * numRows * numChannels];
-
-  for(int i = 0; i < numCols * numRows * numChannels; i++){
-    image[i] = distribution(generator);
+  for(int i = 0; i < numCols * numRows; i++){
+    for(int j = 0; j < numChannels; j++){
+      image[i*numBytesPerPixel + j] = distribution(generator);
+    }
   }
 
-  uint32_t numSlidesX = (numCols - windowSize)/stride + 1;
-  uint32_t numSlidesY = (numRows - windowSize)/stride + 1;
-  uint32_t resultSize = numSlidesX*numSlidesY*numChannels*windowSize*windowSize;
+  
+
+  const uint32_t numSlidesX = (numCols - windowSize)/stride + 1;
+  const uint32_t numSlidesY = (numRows - windowSize)/stride + 1;
+  const uint32_t resultSize = numSlidesX*numSlidesY*numBytesPerPixel*windowSize*windowSize;
+  
   uint8_t expectedResult[resultSize];
 
   for(int k = 0; k < numSlidesY; k++){
@@ -43,7 +49,7 @@ void Run_TestSlidingWindow(WrapperRegDriver* platform)
       for(int i = 0; i < windowSize; i++){
 	for(int j = 0; j < windowSize; j++){
 	  for(int c = 0; c < numChannels; c++){
-	    expectedResult[((k * numSlidesX + l) * windowSize*windowSize + (i * windowSize + j)) * numChannels + c] = image[numChannels*((k*stride + i)*numCols + l*stride + j) + c];
+	    expectedResult[((k * numSlidesX + l) * windowSize*windowSize + (i * windowSize + j)) * numBytesPerPixel + c] = image[((k*stride + i)*numCols + l*stride + j)*numBytesPerPixel + c];
 	  }
 	}
       }
@@ -52,8 +58,10 @@ void Run_TestSlidingWindow(WrapperRegDriver* platform)
   
   cout<<"Image: "<<endl;
   for(int i = 0; i < numRows; i++){
-    for(int j = 0; j < numCols*numChannels; j++){
-      cout<<image[numChannels*i*numCols + j]<<" ";
+    for(int j = 0; j < numCols; j++){
+      for(int k = 0; k < numChannels; k++){
+	cout<<image[(i*numCols + j)*numBytesPerPixel + k]<<" ";
+      }
     }
     cout<<endl;
   }
@@ -61,18 +69,20 @@ void Run_TestSlidingWindow(WrapperRegDriver* platform)
 
   cout<<"Expected output: "<<endl;
   for(int i = 0; i < numSlidesX*numSlidesY; i++){
-    for(int j = 0; j < windowSize*windowSize*numChannels; j++){
-      cout<<expectedResult[i*windowSize*windowSize*numChannels + j]<<" ";
+    for(int j = 0; j < windowSize*windowSize; j++){
+      for(int k = 0; k < numChannels; k++){
+	cout<<expectedResult[(i*windowSize*windowSize + j)*numBytesPerPixel + k]<<" ";
+      }
     }
     cout<<endl;
   }
   cout<<endl;
 
   //We presume one byte per channel
-  void* dramImage = platform->allocAccelBuffer(numCols*numRows*numChannels);
+  void* dramImage = platform->allocAccelBuffer(numCols*numRows*numBytesPerPixel);
   void* dramResult = platform->allocAccelBuffer(resultSize);
 
-  platform->copyBufferHostToAccel(image, dramImage, numCols*numRows*numChannels);
+  platform->copyBufferHostToAccel(image, dramImage, numCols*numRows*numBytesPerPixel);
   
   t.set_numCols(numCols);
   t.set_numRows(numRows);
@@ -93,21 +103,28 @@ void Run_TestSlidingWindow(WrapperRegDriver* platform)
 
   cout<<"Actual output: "<<endl;
   for(int i = 0; i < numSlidesX*numSlidesY; i++){
-    for(int j = 0; j < windowSize*windowSize*numChannels; j++){
-      //cout<<resultBuffer[i*windowSize*windowSize*numChannels + j]<<" ";
-      printf("%c ", resultBuffer[i*windowSize*windowSize*numChannels + j]);
+    for(int j = 0; j < windowSize*windowSize; j++){
+      for(int k = 0; k < numChannels; k++){
+	printf("%c ", resultBuffer[(i*windowSize*windowSize + j)*numBytesPerPixel + k]);
+      }
     }
     cout<<endl;
   }
   cout<<endl;
 
   bool ok = true;
-  for(int i = 0; i < resultSize; i++){
-    if(resultBuffer[i] != expectedResult[i]){
-      ok = false;
-      cout<<"The "<<i<<"'th of "<<resultSize<<" result bytes  were unequal"<<endl;
-      break;
+  for(int i = 0; i < numSlidesX*numSlidesY; i++){
+    for(int j = 0; j < windowSize*windowSize; j++){
+      for(int k = 0; k < numChannels; k++){
+	if(resultBuffer[(i * windowSize * windowSize + j)*numBytesPerPixel + k] != expectedResult[(i * windowSize * windowSize + j) * numBytesPerPixel + k]){
+	  ok = false;
+	  cout<<"The "<<((i * windowSize * windowSize + j)*numBytesPerPixel + k)<<"'th of "<<resultSize<<" result bytes  were unequal"<<endl;
+	  break;
+	}
+      }
+      if(!ok) break;
     }
+    if(!ok) break;
   }
 
   if(ok){

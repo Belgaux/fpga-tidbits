@@ -73,15 +73,20 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
   // For checking how many rows we have read
   val localRowCount = Reg(init=UInt(width=32))
   val globalRowCount = Reg(init=UInt(width=32))
+  val globalColCount = Reg(init=UInt(width=32))
   
   // Indexing in result
   val resultColCount = Reg(init=UInt(width=32))
 
-  // Avoid negative slack by storing this
+  // Avoid negative slack by storing these
   val windowSizeSquared = Reg(init=UInt(width=32))
+  val numBytesPerPixel = Reg(init=UInt(0, 32))
+  val readerByteCount = Reg(init=UInt(0, 32))
+
   windowSizeSquared := io.windowSize * io.windowSize
-  
-  val globalColCount = Reg(init=UInt(width=32))
+  val logWordSize = log2Up(wordSize)
+  numBytesPerPixel := ((io.numChannels + UInt(wordSize - 1)) >> logWordSize) << logWordSize
+  readerByteCount := io.windowSize * numBytesPerPixel
 
   // To avoid combinatorial loop when resetting writer
   val writerIsFinished = Reg(init=Bool(false))
@@ -96,9 +101,6 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
 
   // To check that reader is finished (yes, had some problems here...)
   val numBytesReceived = Reg(init=UInt(0, 32))
-
-  val readerByteCount = Reg(init=UInt(0, 32))
-  readerByteCount := io.windowSize * io.numChannels
 
   switch (state){
     is(s_idle){
@@ -116,13 +118,14 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
         state := s_read
       }
     }
+
     is(s_read){
       reader.baseAddr := (io.addrImage + 
         (localRowCount * io.numCols + globalColCount)
-        * io.numChannels )
+        * numBytesPerPixel )
       reader.byteCount := readerByteCount
-      writer.baseAddr := io.addrResult + resultColCount * windowSizeSquared * io.numChannels
-      writer.byteCount := windowSizeSquared * io.numChannels
+      writer.baseAddr := io.addrResult + resultColCount * windowSizeSquared * numBytesPerPixel
+      writer.byteCount := windowSizeSquared * numBytesPerPixel
       writer.start := Bool(true)
       reader.start := ~areAllDataRead
 
