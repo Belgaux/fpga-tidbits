@@ -17,8 +17,8 @@ void Run_TestBitserial(WrapperRegDriver* platform)
 {
   TestBitserial t(platform);
 
-  int wr = 64;
-  int wc = 1024;
+  int wr = 4;
+  int wc = 64;
   int ar = wc;
   int ac = 1;
   s32 w[wr*wc];

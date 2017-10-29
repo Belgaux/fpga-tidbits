@@ -24,12 +24,12 @@ class TestBitserial(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     val done = Bool(OUTPUT)
   }
 
-  def make_reader(port: Int, baseAddr : UInt, byteCount : UInt) = {
+  def make_reader(port: Int, baseAddr : UInt, byteCount : UInt, start:Bool) = {
     val sr = Module(new StreamReader(new StreamReaderParams(
       streamWidth = word_size, fifoElems = 8, mem = p.toMemReqParams(),
       maxBeats = 1, chanID = 0, disableThrottle = true
     ))).io
-    sr.start := Bool(false)
+    sr.start := start
     sr.baseAddr := baseAddr
     sr.byteCount := byteCount
     sr.req <> io.memPort(port).memRdReq
@@ -37,9 +37,6 @@ class TestBitserial(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     plugMemWritePort(port)
     sr
   }
-
-  val srW = make_reader(port=0, baseAddr=io.addrW, byteCount=io.byte_count_W)
-  val srA = make_reader(port=1, baseAddr=io.addrA, byteCount=io.byte_count_A)
 
   val sw = Module(new StreamWriter(new StreamWriterParams(
     streamWidth = p.memDataBits, mem = p.toMemReqParams(), chanID = 0
@@ -52,87 +49,21 @@ class TestBitserial(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   sw.rsp <> io.memPort(2).memWrRsp
   plugMemReadPort(2)
 
-  val acc = Reg(init = SInt(0, width = word_size))
-  val row_count = Reg(init = UInt(0, width = 32))
-  val col_count = Reg(init = UInt(0, width = 32))
+  val GEMM = Module(new BitserialGEMM(word_size, 2, 2)).io
 
-  // Track how many elems we've computed from the input stream for one VV pair
-  val elems = Reg(init = UInt(0, width = 32))
+  val srW = make_reader(port=0, baseAddr=io.addrW, 
+    byteCount=io.byte_count_W, start=GEMM.W_start)
+  val srA = make_reader(port=1, baseAddr=io.addrA,
+    byteCount=io.byte_count_A, start=GEMM.A_start)
 
-  // BitserialManager eats word-size amount of input elements
-  val M = Module(new BitserialManager(word_size, 2, 2)).io
-  M.start := Bool(false)
-  io.done := Bool(false)
+  GEMM.start := io.start
+  io.done := GEMM.done
+  GEMM.W_R := io.W_R
+  GEMM.W_C := io.W_C
+  GEMM.A_R := io.A_R
+  GEMM.A_C := io.A_C
+  srW.out <> GEMM.W
+  srA.out <> GEMM.A
+  sw.in   <> GEMM.out
 
-  srW.out <> M.W
-  srA.out <> M.A
-
-  sw.in.valid := Bool(false)
-  sw.in.bits := acc
-
-  val s_idle :: s_row :: s_col :: s_vec :: s_write :: s_done :: Nil = Enum(UInt(), 6)
-  val state = Reg(init = UInt(s_idle))
-
-  switch (state) {
-    is (s_idle) {
-      row_count := UInt(0)
-      col_count := UInt(0)
-      elems := UInt(0)
-      acc := UInt(0)
-      when (io.start) { state := s_vec }
-    }
-
-    is (s_row) {
-      when (row_count === io.W_R) {
-        state := s_done
-      }
-      .elsewhen (row_count != io.W_R
-                  && col_count === io.A_C) {
-        row_count := row_count + UInt(1)
-        col_count := UInt(0)
-        acc := UInt(0)
-      }
-      .elsewhen (row_count != io.W_R
-                  && col_count != io.A_C) {
-        state := s_vec
-      }
-    }
-
-    is (s_col) {
-      when (elems === io.W_C) {
-        col_count := col_count + UInt(1)
-        elems := UInt(0)
-        state := s_write
-      }
-      .elsewhen (elems != io.W_C) {
-        state := s_vec
-      }
-    }
-    
-    // This state represents one whole vector-vector MUL
-    is (s_vec) {
-      when (M.done) {
-        acc := acc + M.out
-        elems := elems + UInt(word_size)
-        state := s_col
-      }
-      .otherwise {
-        M.start := Bool(true)  
-        srW.start := Bool(true)
-        srA.start := Bool(true)
-      } 
-    }
-
-    is (s_write) {
-      sw.in.valid := Bool(true)
-      when (sw.in.ready) {
-        state := s_row
-      }
-    }
-
-    is (s_done) {
-      io.done := Bool(true)
-      when (!io.start) { state := s_idle }
-    }
-  }
 }
