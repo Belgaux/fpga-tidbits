@@ -24,9 +24,11 @@ void Run_TestSlidingWindow(WrapperRegDriver* platform)
   std::uniform_int_distribution<uint8_t> distribution('0', '9');
   
   const uint32_t wordSize = 8; // In bytes
-  const uint32_t numCols = 3, numRows = 3, numChannels = 1, windowSize = 2, stride = 1;
+  const uint32_t numCols = 11, numRows = 11, numChannels = 13, windowSize = 2, stride = 3;
   const uint32_t wordsPerPixel = (numChannels + wordSize - 1)/wordSize; // Assume one byte per channel value
-  const uint32_t numBytesPerPixel = wordsPerPixel * wordSize; 
+  const uint32_t numBytesPerPixel = wordsPerPixel * wordSize;
+
+  printf("Num bytes per pixel: %d\n", numBytesPerPixel);
     
   uint8_t image[numCols * numRows * numBytesPerPixel];
 

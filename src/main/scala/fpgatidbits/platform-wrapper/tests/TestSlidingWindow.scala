@@ -7,8 +7,9 @@ import fpgatidbits.streams._
 import fpgatidbits.PlatformWrapper._
 import fpgatidbits.rosetta._
 
-class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends GenericAccelerator(p) {
-  val wordSize = _wordSize 
+class TestSlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends GenericAccelerator(p) {
+  val wordSizeInBits = _wordSizeInBits
+  val wordSizeInBytes = wordSizeInBits/8
   val numMemPorts = 2
 
   val io = new GenericAcceleratorIF(numMemPorts, p){
@@ -31,7 +32,7 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
     */  
   def initialize_reader(port: Int) = {
     val reader = Module(new StreamReader(new StreamReaderParams(
-      streamWidth = wordSize, fifoElems = 8, mem = p.toMemReqParams(),
+      streamWidth = wordSizeInBits, fifoElems = 8, mem = p.toMemReqParams(),
       maxBeats = 1, chanID = 0, disableThrottle = true
     ))).io
     reader.start := Bool(false) 
@@ -84,8 +85,8 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
   val readerByteCount = Reg(init=UInt(0, 32))
 
   windowSizeSquared := io.windowSize * io.windowSize
-  val logWordSize = log2Up(wordSize)
-  numBytesPerPixel := ((io.numChannels + UInt(wordSize - 1)) >> logWordSize) << logWordSize
+  val logWordSize = log2Up(wordSizeInBytes)
+  numBytesPerPixel := ((io.numChannels + UInt(wordSizeInBytes - 1)) >> logWordSize) << logWordSize
   readerByteCount := io.windowSize * numBytesPerPixel
 
   // To avoid combinatorial loop when resetting writer
@@ -123,6 +124,7 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
       reader.baseAddr := (io.addrImage + 
         (localRowCount * io.numCols + globalColCount)
         * numBytesPerPixel )
+
       reader.byteCount := readerByteCount
       writer.baseAddr := io.addrResult + resultColCount * windowSizeSquared * numBytesPerPixel
       writer.byteCount := windowSizeSquared * numBytesPerPixel
@@ -147,14 +149,14 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
       }
 
       when(reader.out.valid && writer.in.ready){
-        numBytesReceived := numBytesReceived + UInt(wordSize/8)
-        when(numBytesReceived === readerByteCount - UInt(wordSize/8)){
-          when (localRowCount === globalRowCount + io.windowSize - UInt(1)){
-            when (globalColCount === io.numCols - io.windowSize){
+        numBytesReceived := numBytesReceived + UInt(wordSizeInBytes)
+        when(numBytesReceived === readerByteCount - UInt(wordSizeInBytes)){ // Finished reading row of window
+          when (localRowCount === globalRowCount + io.windowSize - UInt(1)){ // Finished the whole window
+            when (globalColCount === io.numCols - io.windowSize){ // Finished all the windows on a row
               globalRowCount := globalRowCount + io.stride
               localRowCount := globalRowCount + io.stride
               globalColCount := UInt(0)
-              when (globalRowCount === io.numRows - io.windowSize){
+              when (globalRowCount === io.numRows - io.windowSize){ // Finished all the rows in the image
                 areAllDataRead := Bool(true)
                 globalRowCount := UInt(0)
                 localRowCount := UInt(0)
