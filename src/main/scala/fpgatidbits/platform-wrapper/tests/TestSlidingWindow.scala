@@ -18,10 +18,8 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
     val numChannels = UInt(INPUT, width=32)
     val stride =      UInt(INPUT, width=32)
     val windowSize =  UInt(INPUT, width=32) // Might want to tweakerino
-    //val outChannels = UInt(INPUT, width=32)
     val addrImage =   UInt(INPUT, width=64)
     val addrResult =  UInt(INPUT, width=64)
-    val addr = UInt(INPUT, width=64)
     val start =       Bool(INPUT)
     // Outputs
     val finished = Bool(OUTPUT)
@@ -38,7 +36,7 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
     ))).io
     reader.start := Bool(false) 
     plugMemWritePort(port)
-    reader.req <> io.memPort(port).memRdReq 
+    reader.req <> io.memPort(port).memRdReq
     reader.rsp <> io.memPort(port).memRdRsp
     reader
   }
@@ -65,7 +63,13 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
   val reader = initialize_reader(0) 
   val writer = initialize_writer(1)
   reader.out <> writer.in
-  
+
+  reader.byteCount := UInt(0)
+  reader.baseAddr := UInt(0)
+
+  writer.byteCount := UInt(0)
+  writer.baseAddr := UInt(0)
+
   // For checking how many rows we have read
   val localRowCount = Reg(init=UInt(width=32))
   val globalRowCount = Reg(init=UInt(width=32))
@@ -79,47 +83,93 @@ class TestSlidingWindow(p: PlatformWrapperParams, _wordSize:Int) extends Generic
   
   val globalColCount = Reg(init=UInt(width=32))
 
+  // To avoid combinatorial loop when resetting writer
+  val writerIsFinished = Reg(init=Bool(false))
+  writerIsFinished := writer.finished
+
+  // To notify when reader has read all the data
+  val areAllDataRead = Reg(init=Bool(false))
+
+  // To find out when all data is written
+  val numWindowColonsWrittenOnRow = Reg(init=UInt(0, 32))
+  val numWindowRowsWritten = Reg(init=UInt(0, 32))
+
+  // To check that reader is finished (yes, had some problems here...)
+  val numBytesReceived = Reg(init=UInt(0, 32))
+
+  val readerByteCount = Reg(init=UInt(0, 32))
+  readerByteCount := io.windowSize * io.numChannels
+
   switch (state){
     is(s_idle){
       localRowCount := UInt(0)
       globalRowCount := UInt(0)
       resultColCount := UInt(0) 
       globalColCount := UInt(0)
+
+      numWindowColonsWrittenOnRow := UInt(0)
+      numWindowRowsWritten := UInt(0)
+
+      writerIsFinished := Bool(false)
+      areAllDataRead := Bool(false)
       when (io.start){
         state := s_read
       }
     }
     is(s_read){
       reader.baseAddr := (io.addrImage + 
-                          (globalRowCount + localRowCount) * io.numCols * io.numChannels +
-                          globalColCount)
-      reader.byteCount := io.windowSize * io.numChannels
-      writer.baseAddr := io.addrResult + (resultColCount * windowSizeSquared) * io.numChannels
+        (localRowCount * io.numCols + globalColCount)
+        * io.numChannels )
+      reader.byteCount := readerByteCount
+      writer.baseAddr := io.addrResult + resultColCount * windowSizeSquared * io.numChannels
       writer.byteCount := windowSizeSquared * io.numChannels
       writer.start := Bool(true)
-      reader.start := Bool(true)
-      when (writer.finished === Bool(true)){
+      reader.start := ~areAllDataRead
+
+      when (writerIsFinished === Bool(true)){
+
         writer.start := Bool(false)
-        resultColCount := resultColCount + UInt(1)
-      }
-      when (reader.finished){
-        when (localRowCount === io.windowSize - UInt(1)){
-          when (globalColCount === io.numCols - io.windowSize - UInt(1)){
-            globalRowCount := globalRowCount + io.stride
-            localRowCount := globalRowCount + io.stride
-            globalColCount := UInt(0)
-            when (globalRowCount === io.numRows - io.windowSize -UInt(1)){
-              state := s_finished
-            }
+        when(numWindowColonsWrittenOnRow === io.numCols - io.windowSize){
+          when(numWindowRowsWritten === io.numRows - io.windowSize){
+            state := s_finished
           }.otherwise{
-            globalColCount := globalColCount + io.stride
+            numWindowRowsWritten := numWindowRowsWritten + io.stride
+            numWindowColonsWrittenOnRow := UInt(0)
           }
         }.otherwise{
-          localRowCount := localRowCount + UInt(1)
+          numWindowColonsWrittenOnRow := numWindowColonsWrittenOnRow + io.stride
         }
-        reader.start := Bool(false) 
+
+        resultColCount := resultColCount + UInt(1)
+      }
+
+      when(reader.out.valid && writer.in.ready){
+        numBytesReceived := numBytesReceived + UInt(wordSize/8)
+        when(numBytesReceived === readerByteCount - UInt(wordSize/8)){
+          when (localRowCount === globalRowCount + io.windowSize - UInt(1)){
+            when (globalColCount === io.numCols - io.windowSize){
+              globalRowCount := globalRowCount + io.stride
+              localRowCount := globalRowCount + io.stride
+              globalColCount := UInt(0)
+              when (globalRowCount === io.numRows - io.windowSize){
+                areAllDataRead := Bool(true)
+                globalRowCount := UInt(0)
+                localRowCount := UInt(0)
+                globalColCount := UInt(0)
+              }
+            }.otherwise{
+              localRowCount := globalRowCount
+              globalColCount := globalColCount + io.stride
+            }
+          }.otherwise{
+            localRowCount := localRowCount + UInt(1)
+          }
+          numBytesReceived := UInt(0)
+          reader.start := Bool(false)
+        }
       }
     }
+
     is(s_finished){
       io.finished := Bool(true) 
       when (io.start === Bool(false)){

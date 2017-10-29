@@ -1,6 +1,6 @@
 #!/bin/bash
 cd ..
-sbt "run e TestBitserialGEMM Tester"
-cd emu-TestBitserialGEMM
+sbt "run e TestSlidingWindow Tester"
+cd emu-TestSlidingWindow/
 make
-./app && cd .. && cd emu-TestBitserialGEMM
+./app && cd .. && cd emu-TestSlidingWindow
