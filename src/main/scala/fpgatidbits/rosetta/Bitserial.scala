@@ -15,19 +15,19 @@ class Bitserial(word_size : Int, W_depth : Int, A_depth : Int) extends Module {
   }
 
   val s_idle :: s_bitplane :: s_running :: s_accumulate :: s_done :: Nil = Enum(UInt(), 5)
-  val state = Reg(init=UInt(s_idle))
-  val tmp = Reg(init=SInt(0, width = word_size))
+  val state = Reg(init = UInt(s_idle))
+  val tmp = Reg(init = SInt(0, width = word_size))
   io.out := tmp
   io.done := Bool(false)
 
-  val count = Reg(init=UInt(0, width = log2Up(word_size)))
-  val planeW = Vec.fill(W_depth) { Reg(init=Bits(0, width = word_size)) }
-  val planeA = Vec.fill(A_depth) { Reg(init=Bits(0, width = word_size)) }
+  val count = Reg(init = UInt(0, width = log2Up(word_size)))
+  val planeW = Vec.fill(W_depth) { Reg(init = Bits(0, width = word_size)) }
+  val planeA = Vec.fill(A_depth) { Reg(init = Bits(0, width = word_size)) }
 
   // PE = Processing Element
   val PE = Vec.fill(num_PE) { Module(new DotEngine(word_size)).io }
-  val accs = Vec.fill(num_PE) { Reg(init=SInt(0)) }
-  val acc_index = Reg(init=UInt(0, width = log2Up(num_PE)))
+  val accs = Vec.fill(num_PE) { Reg(init = SInt(0)) }
+  val acc_index = Reg(init = UInt(0, width = log2Up(num_PE)))
 
   for (i <- 0 until W_depth) {
     for (j <- 0 until A_depth) {
