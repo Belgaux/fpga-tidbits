@@ -59,7 +59,7 @@ class TestBitserial(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   GEMM.start := io.start
   io.done := GEMM.done
   GEMM.W_R := io.W_R
-  GEMM.W_C := io.W_C
+  GEMM.W_C := io.W_C // Currently this needs to be a multiple of word_size
   GEMM.A_R := io.A_R
   GEMM.A_C := io.A_C
   srW.out <> GEMM.W

@@ -29,7 +29,6 @@ class BitserialGEMM(word_size: Int, W_depth:Int, A_depth:Int) extends Module {
   // Track how many elems we've computed from the input stream for one VV pair
   val elems = Reg(init = UInt(0, width = 32))
 
-  // BitserialManager eats word-size amount of input elements
   val Manager = Module(new BitserialManager(word_size, 2, 2)).io
   Manager.start := Bool(false)
   Manager.W <> io.W
@@ -54,6 +53,7 @@ class BitserialGEMM(word_size: Int, W_depth:Int, A_depth:Int) extends Module {
     }
 
     is (s_row) {
+      acc := UInt(0)
       when (row_count === io.W_R) {
         state := s_done
       }
@@ -61,7 +61,6 @@ class BitserialGEMM(word_size: Int, W_depth:Int, A_depth:Int) extends Module {
                 && col_count === io.A_C) {
         row_count := row_count + UInt(1)
         col_count := UInt(0)
-        acc := UInt(0)
       }
       .elsewhen (row_count != io.W_R
                 && col_count != io.A_C) {
@@ -93,6 +92,7 @@ class BitserialGEMM(word_size: Int, W_depth:Int, A_depth:Int) extends Module {
         io.A_start := Bool(true)
       }
     }
+
     // TODO(Oscar): maybe change this to buffering output in BRAM/cache?
     is (s_write) {
       io.out.valid := Bool(true)

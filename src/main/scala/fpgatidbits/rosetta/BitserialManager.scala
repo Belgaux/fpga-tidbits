@@ -16,7 +16,9 @@ class BitserialManager(word_size : Int, W_depth : Int, A_depth : Int) extends Mo
   val tmp = Reg(init = SInt(0, width = word_size))
   io.out := tmp
 
+  // Packing 'word_size' number of elements into an integer of 'word_size' width
   val bitpack_count = Reg(init = UInt(0, width = log2Up(word_size)))
+  
   val PE = Module(new Bitserial(word_size, W_depth, A_depth)).io
   PE.start     := Bool(false)
   PE.bitplane  := Bool(false)
@@ -43,7 +45,7 @@ class BitserialManager(word_size : Int, W_depth : Int, A_depth : Int) extends Mo
         PE.bitplane := Bool(true)
         state := s_pack
       }
-    }   
+    }
 
     is (s_pack) {
       when (PE.done) {
