@@ -115,7 +115,8 @@ object MainObj {
     "TestGather" -> {p => new TestGather(p)},
     "TestBMVM" -> {p => new TestBMVM(p, 64, 4)},
     "TestDRAM" -> {p => new TestDRAM(p)},
-    "TestSlidingWindow" -> {p => new TestSlidingWindow(p, 64)}
+    "TestSlidingWindow" -> {p => new TestSlidingWindow(p, 64)},
+    "TestSlidingWindowBitplanes" -> {p => new TestSlidingWindowBitplanes(p, 64)}
   )
 
   val platformMap: PlatformMap = Map(
@@ -161,7 +162,7 @@ object MainObj {
     val files = Array("wrapperregdriver.h", "platform-tester.cpp",
       "platform.h", "testerdriver.hpp")
     val utilsRoot = "src/main/utils/"
-    val utilsFiles = Array("Makefile", "recompile.sh", "bitserial.h", "bitserial.cpp")
+    val utilsFiles = Array("Makefile", "recompile.sh")
     for(f <- utilsFiles) { fileCopy(utilsRoot + f, s"$targetDir/" + f) }
     for(f <- files) { fileCopy(regDrvRoot + f, s"$targetDir/" + f) }
     val testRoot = "src/main/cpp/platform-wrapper-tests/"
