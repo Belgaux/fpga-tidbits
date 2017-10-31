@@ -49,7 +49,7 @@ class TestBitserial(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   sw.rsp <> io.memPort(2).memWrRsp
   plugMemReadPort(2)
 
-  val GEMM = Module(new BitserialGEMM(word_size, 2, 2)).io
+  val GEMM = Module(new BitserialGEMM(word_size, 8, 8)).io
 
   val srW = make_reader(port=0, baseAddr=io.addrW, 
     byteCount=io.byte_count_W, start=GEMM.W_start)
