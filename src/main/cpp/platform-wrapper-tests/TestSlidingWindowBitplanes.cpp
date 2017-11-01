@@ -18,6 +18,13 @@ uint32_t ceilNum(uint32_t num, uint32_t align){
   return (num + align - 1)/align * align;
 }
 
+void print_lsb(uint64_t i){
+  for(int k = 0; k < 64; k++){
+    printf("%d", (i>>k)&1);
+  }
+  printf("\n");
+}
+
 //Module takes in image of form channel/bitplane/row/column, outputs window by window in channel/bitplane/row/column format
 void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform) 
 {
@@ -31,7 +38,7 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   
   const uint32_t wordSizeInBytes = 8; // In bytes
   const uint32_t wordSizeInBits = 8*wordSizeInBytes;
-  const uint32_t numCols = 2, numRows = 2, numChannels = 2, numBits = 2, windowSize = 1, stride = 1;
+  const uint32_t numCols = 4, numRows = 4, numChannels = 1, numBits = 1, windowSize = 2, stride = 2;
 
   if((numCols - windowSize) % stride != 0){
     printf("Invalid combination of numCols, windowSize and stride\n");
@@ -44,6 +51,7 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   }
   
   const uint32_t numBytesPerRow = ceilNum(numCols, wordSizeInBits)/8;
+  const uint32_t inputSizeInBytes = numBytesPerRow * numRows * numBits * numChannels;
   
   uint8_t image[numBytesPerRow * numRows * numBits * numChannels];
 
@@ -115,63 +123,63 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   }
   printf("\n");
 
-  return;
-
-  /*
+  
   //We presume one byte per channel
-  void* dramImage = platform->allocAccelBuffer(numCols*numRows*numBytesPerPixel);
-  void* dramResult = platform->allocAccelBuffer(resultSize);
+  void* dramImage = platform->allocAccelBuffer(inputSizeInBytes);
+  void* dramResult = platform->allocAccelBuffer(outputSizeInBytes);
 
-  platform->copyBufferHostToAccel(image, dramImage, numCols*numRows*numBytesPerPixel);
+  platform->copyBufferHostToAccel(image, dramImage, inputSizeInBytes);
   
   t.set_numCols(numCols);
   t.set_numRows(numRows);
   t.set_numChannels(numChannels);
+  t.set_numBits(numBits);
   t.set_stride(stride);
   t.set_windowSize(windowSize);
   t.set_addrImage((AccelDblReg)dramImage);
   t.set_addrResult((AccelDblReg)dramResult);
 
+  t.set_checkAddrBRAM(0);
+  
   t.set_start(1);
 
   while(!t.get_finished());
 
   t.set_start(0);
 
-  uint8_t resultBuffer[resultSize];
-  platform->copyBufferAccelToHost(dramResult, resultBuffer, resultSize);
+  uint64_t out = t.get_debugOutput();
+  printf("First entry in BRAM:\n");
+  print_lsb(out);
+  
+  return;
+  uint8_t resultBuffer[outputSizeInBytes];
+  platform->copyBufferAccelToHost(dramResult, resultBuffer, outputSizeInBytes);
 
   cout<<"Actual output: "<<endl;
-  for(int i = 0; i < numSlidesX*numSlidesY; i++){
-    for(int j = 0; j < windowSize*windowSize; j++){
-      for(int k = 0; k < numChannels; k++){
-	printf("%c ", resultBuffer[(i*windowSize*windowSize + j)*numBytesPerPixel + k]);
+  for(int i = 0; i < numOutputRows; i++){
+    for(int j = 0; j < outputRowSizeInBytes; j++){
+      for(int k = 0; k < 8; k++){
+	printf("%d", (resultBuffer[i * outputRowSizeInBytes + j] >> k) & 1);
       }
     }
-    cout<<endl;
+    printf("\n");
   }
-  cout<<endl;
-
+  printf("\n");
+  
   bool ok = true;
-  for(int i = 0; i < numSlidesX*numSlidesY; i++){
-    for(int j = 0; j < windowSize*windowSize; j++){
-      for(int k = 0; k < numChannels; k++){
-	if(resultBuffer[(i * windowSize * windowSize + j)*numBytesPerPixel + k] != expectedResult[(i * windowSize * windowSize + j) * numBytesPerPixel + k]){
-	  ok = false;
-	  cout<<"The "<<((i * windowSize * windowSize + j)*numBytesPerPixel + k)<<"'th of "<<resultSize<<" result bytes  were unequal"<<endl;
-	  break;
-	}
-      }
-      if(!ok) break;
+  for(int i = 0; i < outputSizeInBytes; i++){
+    if(resultBuffer[i] != expectedResult[i]){
+      printf("%d'th result bytes were unequal\n", i);
+      ok = false;
+      break;
     }
-    if(!ok) break;
   }
 
   if(ok){
     cout<<"The results were equal!"<<endl;
   }else{
     cout<<"The results were not equal"<<endl;
-    }*/
+  }
 }
 
 int main()
