@@ -9,6 +9,8 @@ import fpgatidbits.rosetta._
 class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   val word_size = 64
   val num_accs = 1024
+  val output_queue_size = 8
+  val input_queue_size = 8
   val bytes_per_elem = UInt(word_size/8)
   val numMemPorts = 3
   val io = new GenericAcceleratorIF(numMemPorts, p) {
@@ -65,13 +67,16 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   ))).io
   sw.baseAddr := io.addrR
   sw.byteCount := io.byte_count_R
-  sw.start := io.start
+  sw.start := Bool(false)
   sw.req <> io.memPort(2).memWrReq
   sw.wdat <> io.memPort(2).memWrDat
   sw.rsp <> io.memPort(2).memWrRsp
   plugMemReadPort(2)
-  sw.in.valid := Bool(false)
-  sw.in.bits := accs(write_index)
+
+  val out_queue = Decoupled(SInt(width=word_size))
+  out_queue.valid := Bool(false)
+  out_queue.bits := UInt(4095)
+  sw.in <> FPGAQueue(out_queue, output_queue_size)
 
 
   val plane_w_stride = bytes_per_elem * io.W_C * io.W_R
@@ -87,11 +92,10 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   srW.out.ready := Bool(false)
   srA.out.ready := Bool(false)
 
-  val s_idle :: s_one :: s_two :: s_three :: s_four :: s_five :: s_six :: s_write:: s_done :: Nil = Enum(UInt(), 9)
+  val s_idle :: s_one :: s_two :: s_three :: s_four :: s_five :: s_six :: s_write:: s_done :: s_wait :: Nil = Enum(UInt(), 10)
   val state = Reg(init=UInt(s_idle))
   val index = UInt()
   index := row * io.A_C + col
-
 
   switch (state) {
   
@@ -101,6 +105,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
       row := UInt(0)
       col := UInt(0)
       write_index := UInt(0)
+      elems := UInt(0)
       for (i <- 0 until num_accs) {
         accs(i) := SInt(0)  
       }
@@ -118,6 +123,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
         printf("index=%d\n", index)
         */
 
+        //TODO : MAKE THIS UGLY INLINE MESS MODULAR
         accs(index) := Mux((UInt(negw) ^ UInt(nega)) === UInt(1),
           accs(index) - (PopCount(srW.out.bits & srA.out.bits) << (cur_w + cur_a)),
           accs(index) + (PopCount(srW.out.bits & srA.out.bits) << (cur_w + cur_a)))
@@ -199,6 +205,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
     is (s_six) {
       when (cur_w === io.w_depth) {
+        write_index := UInt(0)
         state := s_write
       }
       .otherwise {
@@ -207,13 +214,22 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     }
 
     is (s_write) {
-      when (sw.finished) { state := s_done }
-      .otherwise {
-        sw.in.valid := Bool(true)
-        when (sw.in.ready) {
-          write_index := write_index + UInt(1)
+      // start producing and consuming output
+      sw.start := Bool(true)
+      out_queue.valid := Bool(true)
+      when (out_queue.ready) {
+        write_index := write_index + UInt(1)
+        out_queue.bits := accs(write_index)
+        when (write_index === ((io.W_R * io.A_C) - UInt(1))) {
+          state := s_wait
         }
       }
+    }
+
+    is (s_wait) {
+      // Wait for StreamWriter to finish writing to DRAM
+      sw.start := Bool(true)
+      when (sw.finished) { state := s_done }
     }
 
     is (s_done) {
