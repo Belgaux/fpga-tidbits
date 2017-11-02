@@ -99,8 +99,8 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
   val currInputBitplane = UInt(width=16)
   val currInputChannel = UInt(width=16)
 
-  val currOutputRow = UInt(width=32)
-  val currOutputBitplane = UInt(width=32)
+  val currOutputRow = Reg(init=UInt(0, width=32))
+  val currOutputBitplane = Reg(init=UInt(0, width=32))
 
   val currInputFillingRow = Reg(init=UInt(0, width=16))
   val currOutputFillingRow = Reg(init=UInt(0, width=16))
