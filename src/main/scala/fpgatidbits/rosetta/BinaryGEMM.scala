@@ -26,6 +26,7 @@ class BinaryGEMM(word_size:Int) extends Module {
 
   val negw = Bool()
   val nega = Bool()
+
   // Assume little endian ordering
   negw := io.cur_w === io.max_w - UInt(1)
   nega := io.cur_a === io.max_a - UInt(1)
@@ -70,7 +71,7 @@ class BinaryGEMM(word_size:Int) extends Module {
       }
       .elsewhen (row_count != io.W_R
           && col_count === io.A_C) { // When we have finished all columns for this row
-        write_row := row_count
+        write_row := row_count // save the output row
         row_count := row_count + UInt(1)
         col_count := UInt(0)
         state := s_write
@@ -102,7 +103,7 @@ class BinaryGEMM(word_size:Int) extends Module {
         acc := Mux((UInt(negw) ^ UInt(nega)) === UInt(1),
           acc - (dot.dout.bits << (io.cur_w + io.cur_a)),
           acc + (dot.dout.bits << (io.cur_w + io.cur_a)))
-        elems := elems + UInt(word_size)
+        elems := elems + UInt(1)
         state := s_col
       }
       .otherwise {
@@ -113,6 +114,7 @@ class BinaryGEMM(word_size:Int) extends Module {
     is (s_write) {
       io.out.valid := Bool(true)
       when (io.out.ready) {
+        printf("acc=%b\n", io.out.bits)
         state := s_row
       }
     }
