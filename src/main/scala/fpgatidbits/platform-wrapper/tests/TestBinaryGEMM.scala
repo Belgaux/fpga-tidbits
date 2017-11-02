@@ -47,28 +47,36 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
   io.done := Bool(false)
 
-  val row = Reg(init = UInt(0, width = 32))
-  val col = Reg(init = UInt(0, width = 32))
-  val index = UInt()
-  index := row * io.A_C + col
-
-  // Bit-plane counters
-  val cur_w = Reg(init=UInt(0, width = 32))
-  val cur_a = Reg(init=UInt(0, width = 32))
-
-  val negw = Bool()
-  val nega = Bool()
-  // Assume little endian ordering
-  negw := cur_w === io.w_depth - UInt(1)
-  nega := cur_a === io.a_depth - UInt(1)
-
+  //////// REGISTERS
   
   val write_index = Reg(init=UInt(0, width=32))
   val accs = Vec.fill(num_accs) { Reg(init=SInt(0, width = word_size)) }
   val elems = Reg(init=UInt(0, width = 32))
 
+  // For each row in W, for each column in A
+  val row = Reg(init = UInt(0, width = 32))
+  val col = Reg(init = UInt(0, width = 32))
+
+  // Bit-plane counters
+  val cur_w = Reg(init=UInt(0, width = 32))
+  val cur_a = Reg(init=UInt(0, width = 32))
+
+  /////// WIRES
+
+  // Sign bits for bitserial
+  // Assume bitplanes are stored in "little endian" order
+  val negw = Bool()
+  val nega = Bool()
+  negw := cur_w === io.w_depth - UInt(1)
+  nega := cur_a === io.a_depth - UInt(1)
+
+  // Index for result-matrix accumulators
+  val index = UInt()
+  index := row * io.A_C + col
+
 
   //////// OUTPUT
+  
   val sw = Module(new StreamWriter(new StreamWriterParams(
     streamWidth = p.memDataBits, mem = p.toMemReqParams(), chanID = 0
   ))).io
@@ -87,6 +95,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
 
   ///////// INPUT
+  
   val plane_w_stride = bytes_per_elem * io.W_C * io.W_R
   val plane_a_stride = bytes_per_elem * io.A_R * io.A_C
   val reader_stride = bytes_per_elem * io.W_C
@@ -102,10 +111,10 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   in_queue_w.ready := Bool(false)
   in_queue_a.ready := Bool(false)
 
-  //srW.out.ready := Bool(false)
-  //srA.out.ready := Bool(false)
 
+  ///////// STATE MACHINE
 
+  // TODO: Give these states more descriptive names
   val s_idle :: s_one :: s_two :: s_three :: s_four :: s_five :: s_six :: s_write:: s_done :: s_wait :: Nil = Enum(UInt(), 10)
   val state = Reg(init=UInt(s_idle))
 
@@ -128,37 +137,15 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     
     is (s_one) {
       when (in_queue_w.valid && in_queue_a.valid) {
-
-        /*
-        printf("srW.out.bits=%b\n", srW.out.bits)
-        printf("srA.out.bits=%b\n", srA.out.bits)
-        printf("index=%d\n", index)
-        */
+        in_queue_w.ready := Bool(true)
+        in_queue_a.ready := Bool(true)
 
         //TODO : MAKE THIS UGLY INLINE MESS MODULAR
         accs(index) := Mux((UInt(negw) ^ UInt(nega)) === UInt(1),
           accs(index) - (PopCount(in_queue_w.bits & in_queue_a.bits) << (cur_w + cur_a)),
           accs(index) + (PopCount(in_queue_w.bits & in_queue_a.bits) << (cur_w + cur_a)))
 
-
-        /*
-        printf("cur_w + cur_a = %d\n", cur_w + cur_a)
-        printf("accs(%d)=%b\n", index, accs(index))
-        printf("Mux output = %b \n", Mux((UInt(negw) ^ UInt(nega)) === UInt(1),
-          accs(index) - (PopCount(srW.out.bits & srA.out.bits) << (cur_w + cur_a)),
-          accs(index) + (PopCount(srW.out.bits & srA.out.bits) << (cur_w + cur_a))))
-        */
-
-
-        /*
-        printf("row=%d\n", row)
-        printf("col=%d\n", col)
-        */
-
-        in_queue_w.ready := Bool(true)
-        in_queue_a.ready := Bool(true)
         elems := elems + UInt(1)
-
         state := s_two
       }
       .otherwise {
@@ -177,11 +164,6 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     }
 
     is (s_three) {
-      /*
-      for (i <- 0 until 32) {
-        printf("accs(%d)=%b\n", UInt(i), accs(i))
-      }
-      */
       when (col === io.A_C) { // Done with all columns for one row
         row := row + UInt(1)
         state := s_four
