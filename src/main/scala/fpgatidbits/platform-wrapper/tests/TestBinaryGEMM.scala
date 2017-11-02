@@ -159,9 +159,11 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     }
 
     is (s_three) {
+      /*
       for (i <- 0 until 32) {
         printf("accs(%d)=%b\n", UInt(i), accs(i))
       }
+      */
       when (col === io.A_C) { // Done with all columns for one row
         row := row + UInt(1)
         state := s_four
@@ -205,10 +207,12 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     }
 
     is (s_write) {
-      sw.in.valid := Bool(true)
-      when (sw.in.ready) {
-        write_index := write_index + UInt(1)
-        state := Mux(write_index === (io.W_R * io.A_C), s_done, s_write)
+      when (sw.finished) { state := s_done }
+      .otherwise {
+        sw.in.valid := Bool(true)
+        when (sw.in.ready) {
+          write_index := write_index + UInt(1)
+        }
       }
     }
 
