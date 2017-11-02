@@ -73,7 +73,10 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
   reader.byteCount := UInt(0)
   reader.out.ready := Bool(false)
 
-  val bram = Module(new DualPortBRAM(addrBits = 32, dataBits = wordSizeInBits)).io
+  val bram = Module(new DualPortBRAM(
+    addrBits = 14, // 14 bits is enough for 10000 columns and a windowSize of 16
+    dataBits = wordSizeInBits
+  )).io
 
   val bramWritePort = bram.ports(0)
   val bramReadPort = bram.ports(1)
@@ -87,10 +90,8 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
   io.finished := Bool(false)
 
   // Debug
-  //bramReadPort.req.addr := io.checkAddrBRAM
-  bramReadPort.req.addr := UInt(0)
+  bramReadPort.req.addr := io.checkAddrBRAM
   io.debugOutput := bramReadPort.rsp.readData
-  printf("Debugoutput is %d read from %d\n", io.debugOutput, bramReadPort.req.addr)
 
   val buffer = Reg(init=UInt(width=wordSizeInBits))
 
@@ -142,7 +143,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
       reader.byteCount := UInt(wordSizeInBytes)
       reader.start := Bool(true)
       reader.out.ready := Bool(true)
-      bramWritePort.req.addr := currOutputFillingRow * inputBytesPerRow + (currInputCol >> wordBitExponent)
+      bramWritePort.req.addr := currOutputFillingRow * (inputBytesPerRow >> wordByteExponent) + (currInputCol >> wordBitExponent)
       bramWritePort.req.writeEn := reader.out.valid
       bramWritePort.req.writeData := reader.out.bits
 

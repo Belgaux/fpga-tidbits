@@ -139,7 +139,8 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   t.set_addrImage((AccelDblReg)dramImage);
   t.set_addrResult((AccelDblReg)dramResult);
 
-  t.set_checkAddrBRAM(0);
+  const uint64_t checkAddr = 1;
+  t.set_checkAddrBRAM(checkAddr);
   
   t.set_start(1);
 
@@ -148,7 +149,7 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   t.set_start(0);
 
   uint64_t out = t.get_debugOutput();
-  printf("First entry in BRAM:\n");
+  printf("Entry no. %d in BRAM:\n", checkAddr);
   print_lsb(out);
   
   return;
