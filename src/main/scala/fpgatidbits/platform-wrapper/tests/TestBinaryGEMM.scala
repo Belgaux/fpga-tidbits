@@ -98,7 +98,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   
   val plane_w_stride = bytes_per_elem * io.W_C * io.W_R
   val plane_a_stride = bytes_per_elem * io.A_R * io.A_C
-  val reader_stride = bytes_per_elem * io.W_C
+  val reader_stride = bytes_per_elem * io.W_C // This is one whole vector of the matrix
   val srW = make_reader(port=0, 
     baseAddr=io.addrW + row * reader_stride + cur_w * plane_w_stride, 
     byteCount = reader_stride, start=Bool(false))
@@ -111,15 +111,23 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   in_queue_w.ready := Bool(false)
   in_queue_a.ready := Bool(false)
 
+/*
+  ///////// PROCESSING ELEMENT
+  val dot = Module(new DotProduct(word_size)).io
+  dot.start := io.start
+  dot.din0 <> in_queue_w
+  dot.din1 <> in_queue_a
+  dot.dout.ready := Bool(false)
+*/
 
   ///////// STATE MACHINE
 
   // TODO: Give these states more descriptive names
+  // TODO: Also possible todo, break up the state machine in different modules? Might not be too easy
   val s_idle :: s_one :: s_two :: s_three :: s_four :: s_five :: s_six :: s_write:: s_done :: s_wait :: Nil = Enum(UInt(), 10)
   val state = Reg(init=UInt(s_idle))
 
   switch (state) {
-  
     is (s_idle) {
       cur_w := UInt(0)
       cur_a := UInt(0)
@@ -140,7 +148,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
         in_queue_w.ready := Bool(true)
         in_queue_a.ready := Bool(true)
 
-        //TODO : MAKE THIS UGLY INLINE MESS MODULAR
+        // TODO: Clean up this inline monster that can only synthesize on 50MHZ
         accs(index) := Mux((UInt(negw) ^ UInt(nega)) === UInt(1),
           accs(index) - (PopCount(in_queue_w.bits & in_queue_a.bits) << (cur_w + cur_a)),
           accs(index) + (PopCount(in_queue_w.bits & in_queue_a.bits) << (cur_w + cur_a)))

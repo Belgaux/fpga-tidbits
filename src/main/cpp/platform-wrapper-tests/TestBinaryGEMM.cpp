@@ -27,8 +27,8 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
 
 
   // loops for testing lots of matrices
-  for (int rr = 2; rr < 4; ++rr) {
-    for (int cc = 2; cc < 128; ++cc) {
+  for (int rr = 1; rr < 8; ++rr) {
+    for (int cc = 1; cc < 128; ++cc) {
 
     ////////////// GENERATING TEST MATRICES //////////
 
@@ -53,7 +53,7 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
       u64 W[wr*wc];
 
       int ar = wc;
-      int ac = rr;
+      int ac = 1;
       int ad = 2;
       
       //printf("W:\n");
