@@ -20,7 +20,7 @@ uint32_t ceilNum(uint32_t num, uint32_t align){
 
 void print_lsb(uint64_t i){
   for(int k = 0; k < 64; k++){
-    printf("%d", (i>>k)&1);
+    printf("%ld", (i>>k)&1);
   }
   printf("\n");
 }
@@ -149,10 +149,10 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   t.set_start(0);
 
   uint64_t out = t.get_debugOutput();
-  printf("Entry no. %d in BRAM:\n", checkAddr);
-  print_lsb(out);
+  //printf("Entry no. %ld in BRAM:\n", checkAddr);
+  //print_lsb(out);
   
-  return;
+  //return;
   uint8_t resultBuffer[outputSizeInBytes];
   platform->copyBufferAccelToHost(dramResult, resultBuffer, outputSizeInBytes);
 
