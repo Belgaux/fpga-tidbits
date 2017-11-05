@@ -113,7 +113,6 @@ object MainObj {
     "TestBRAMMasked" -> {p => new TestBRAMMasked(p)},
     "TestMemLatency" -> {p => new TestMemLatency(p)},
     "TestGather" -> {p => new TestGather(p)},
-    "TestBitserial" -> {p => new TestBitserial(p)},
     "TestBinaryGEMM" -> {p => new TestBinaryGEMM(p)}
   )
 
