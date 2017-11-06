@@ -38,7 +38,7 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   
   const uint32_t wordSizeInBytes = 8; // In bytes
   const uint32_t wordSizeInBits = 8*wordSizeInBytes;
-  const uint32_t numCols = 27, numRows = 58, numChannels = 5, numBits = 1, windowSize = 1, stride = 1;
+  const uint32_t numCols = 63, numRows = 47, numChannels = 20, numBits = 8, windowSize = 11, stride = 4;
 
   if((numCols - windowSize) % stride != 0){
     printf("Invalid combination of numCols, windowSize and stride\n");
@@ -47,6 +47,11 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   
   if((numRows - windowSize) % stride != 0){
     printf("Invalid combination of numRows, windowSize and stride\n");
+    exit(-1);
+  }
+
+  if(windowSize > numCols || windowSize > numRows){
+    printf("Window does not fit inside image!\n");
     exit(-1);
   }
   
@@ -84,10 +89,8 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
       for(int t = 0; t < numWindowsX; t++){
 	memset(expectedResult + (u * numWindowsY * numWindowsX + s * numWindowsX + t) * outputRowSizeInBytes,0,outputRowSizeInBytes);
 	for(int j = 0; j < numChannels; j++){
-	  
 	  int currBit = 0;
 	  int currByte = j * outputWindowSizeInBytes;
-	  currByte = j * outputWindowSizeInBytes;
 	  for(int l = 0; l < windowSize; l++){
 	    for(int k = 0; k < windowSize; k++){
 	      int imageRowByte = (t * stride + k) / 8;

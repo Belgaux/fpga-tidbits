@@ -240,7 +240,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
             temporaryBuffer := UInt(0)
             wBufferFillNumBitsReadOnRow := UInt(0)
             wBufferFillNumRowsRead := UInt(0)
-            printf("Filled BRAM, currInputChannel = %d\n", currInputChannel)
+            //printf("Filled BRAM, currInputChannel = %d\n", currInputChannel)
             state := s_fill_window_size_buffer
           }.otherwise{
             bramInputFillingRow := bramInputFillingRow + UInt(1)
@@ -259,9 +259,9 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
 
       when(wBufferFillValidReadBRAM){
         val readAndFilteredFromBRAM = UInt((bramReadPort.rsp.readData >> lastCycleColBitInWord) & remainMask, width=16)
-        printf("lastCycleColBitInWord: %d, remainMask: %b\n", lastCycleColBitInWord, remainMask)
+        //printf("lastCycleColBitInWord: %d, remainMask: %b\n", lastCycleColBitInWord, remainMask)
         val newTemp = (temporaryBuffer | (readAndFilteredFromBRAM << wBufferFillWritePosition))
-        printf("Read from BRAM: %b, filtered: %b, newTemp: %b, wBufferFillWriteposition: %d\n", bramReadPort.rsp.readData, readAndFilteredFromBRAM, newTemp, wBufferFillWritePosition)
+        //printf("Read from BRAM: %b, filtered: %b, newTemp: %b, wBufferFillWriteposition: %d\n", bramReadPort.rsp.readData, readAndFilteredFromBRAM, newTemp, wBufferFillWritePosition)
         //printf("Constructing new temp: %b, lastStride: %d, numRowsRead: %d\n", newTemp, lastStride, wBufferFillNumRowsRead)
         temporaryBuffer := newTemp
         wBufferFillWritePosition := wBufferFillWritePosition + lastStride
@@ -278,7 +278,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
           val currStride = UInt(wordSizeInBits) - wBufferFillReadColumnBitInWord
           lastStride := currStride
           remainMask := (UInt(1,width=16) << currStride) - UInt(1,width=16)
-          printf("wBufferFillNumBitsReadOnRow = %d, wordSizeInBits = %d, wBufferFillReadColumnBitInWord = %d\n", wBufferFillNumBitsReadOnRow, UInt(wordSizeInBits), wBufferFillReadColumnBitInWord)
+          //printf("wBufferFillNumBitsReadOnRow = %d, wordSizeInBits = %d, wBufferFillReadColumnBitInWord = %d\n", wBufferFillNumBitsReadOnRow, UInt(wordSizeInBits), wBufferFillReadColumnBitInWord)
         }.otherwise{
           wBufferFillReadColumnWord := currInputColWord
           wBufferFillReadColumnBitInWord := currInputColBitInWord
@@ -293,7 +293,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
 
           remainMask := (UInt(1) << (io.windowSize - wBufferFillNumBitsReadOnRow)) - UInt(1)
         }
-        printf("wBufferFillReadColumnBitInWord = %d\n", wBufferFillReadColumnBitInWord)
+        //printf("wBufferFillReadColumnBitInWord = %d\n", wBufferFillReadColumnBitInWord)
         lastCycleColBitInWord := wBufferFillReadColumnBitInWord
 
         bramReadPort.req.addr := wBufferFillReadRow * inputWordsPerRow + wBufferFillReadColumnWord
@@ -317,7 +317,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
             writerWaitForNumFinished := writerWaitForNumFinished + UInt(1)
             currTempBufferOutputBit := UInt(0)
             temporaryBuffer := UInt(0)
-            printf("Done writing temp buffer %b\n", temporaryBuffer)
+            //printf("Done writing temp buffer %b\n", temporaryBuffer)
 
             wBufferFillNumBitsReadOnRow := UInt(0)
             wBufferFillNumRowsRead := UInt(0)
@@ -327,14 +327,14 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
 
             state := s_fill_window_size_buffer
             when(currOutputRow === outputNumRowsPerBitplane - UInt(1)){ // Finished with a channel batch
-              printf("Done writing channel batch\n")
+              //printf("Done writing channel batch\n")
               numBRAMRowsToFill := io.windowSize
               currOutputRow := UInt(0)
               when(currInputChannel === io.numChannels - UInt(1)){ // Finished with all channels of a bitplane
-                printf("Done writing bitplane\n")
+                //printf("Done writing bitplane\n")
                 currInputChannel := UInt(0)
                 when(currInputBitplane === io.numBits - UInt(1)){ // Finished all bitplanes
-                  printf("Done\n")
+                  //printf("Done\n")
                   state := s_wait_for_writer_finish
                 }.otherwise{
                   currInputBitplane := currInputBitplane + UInt(1)
