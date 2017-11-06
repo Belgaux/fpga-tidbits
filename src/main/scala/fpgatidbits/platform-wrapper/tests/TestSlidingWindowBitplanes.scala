@@ -71,7 +71,6 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
   val reader = initialize_reader(0) 
   val writer = initialize_writer(1)
 
-
   reader.baseAddr := UInt(0)
   reader.byteCount := UInt(0)
   reader.out.ready := Bool(false)
@@ -81,6 +80,10 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
   writer.byteCount := UInt(0)
   writer.in.valid := Bool(false)
   writer.in.bits := UInt(0)
+
+  val readerEnableReg = Reg(init=Bool(false))
+  readerEnableReg := Bool(false)
+  reader.start := readerEnableReg
 
   val writerActiveLastCycle = Reg(init=Bool(false))
   val writerFinishedLastCycle = Reg(init=Bool(false))
@@ -203,7 +206,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
     is(s_fill_bram){
       reader.baseAddr := io.addrImage + inputBitsChannelsOffset + (currInputRow + io.windowSize - numBRAMRowsToFill + bramInputFillingRow) * inputBytesPerRow
       reader.byteCount := inputWordsPerRow << wordByteExponent
-      reader.start := Bool(true)
+      readerEnableReg := Bool(true)
       reader.out.ready := Bool(true)
       bramWritePort.req.addr :=  bramOutputFillingRow * inputWordsPerRow + bramInputFillingColWord
       bramWritePort.req.writeEn := reader.out.valid
@@ -237,7 +240,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
             temporaryBuffer := UInt(0)
             wBufferFillNumBitsReadOnRow := UInt(0)
             wBufferFillNumRowsRead := UInt(0)
-
+            printf("Filled BRAM, currInputChannel = %d\n", currInputChannel)
             state := s_fill_window_size_buffer
           }.otherwise{
             bramInputFillingRow := bramInputFillingRow + UInt(1)
@@ -276,7 +279,6 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
           lastStride := currStride
           remainMask := (UInt(1,width=16) << currStride) - UInt(1,width=16)
           printf("wBufferFillNumBitsReadOnRow = %d, wordSizeInBits = %d, wBufferFillReadColumnBitInWord = %d\n", wBufferFillNumBitsReadOnRow, UInt(wordSizeInBits), wBufferFillReadColumnBitInWord)
-          printf("Remain mask shift: %d\n", (UInt(1,width=8) << currStride) - UInt(1,width=8))
         }.otherwise{
           wBufferFillReadColumnWord := currInputColWord
           wBufferFillReadColumnBitInWord := currInputColBitInWord
