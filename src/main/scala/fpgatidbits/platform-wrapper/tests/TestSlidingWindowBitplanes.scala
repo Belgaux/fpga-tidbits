@@ -256,9 +256,9 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
 
       when(wBufferFillValidReadBRAM){
         val readAndFilteredFromBRAM = UInt((bramReadPort.rsp.readData >> lastCycleColBitInWord) & remainMask, width=16)
-        //printf("lastCycleColBitInWord: %d, remainMask: %b\n", lastCycleColBitInWord, remainMask)
+        printf("lastCycleColBitInWord: %d, remainMask: %b\n", lastCycleColBitInWord, remainMask)
         val newTemp = (temporaryBuffer | (readAndFilteredFromBRAM << wBufferFillWritePosition))
-        //printf("Read from BRAM: %b, filtered: %b, newTemp: %b, wBufferFillWriteposition: %d\n", bramReadPort.rsp.readData, readAndFilteredFromBRAM, newTemp, wBufferFillWritePosition)
+        printf("Read from BRAM: %b, filtered: %b, newTemp: %b, wBufferFillWriteposition: %d\n", bramReadPort.rsp.readData, readAndFilteredFromBRAM, newTemp, wBufferFillWritePosition)
         //printf("Constructing new temp: %b, lastStride: %d, numRowsRead: %d\n", newTemp, lastStride, wBufferFillNumRowsRead)
         temporaryBuffer := newTemp
         wBufferFillWritePosition := wBufferFillWritePosition + lastStride
@@ -285,6 +285,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
             wBufferFillReadRow := wBufferFillReadRow + UInt(1)
           }
         }
+        printf("wBufferFillReadColumnBitInWord = %d\n", wBufferFillReadColumnBitInWord)
         lastCycleColBitInWord := wBufferFillReadColumnBitInWord
         remainMask := (UInt(1) << (io.windowSize - wBufferFillNumBitsReadOnRow)) - UInt(1)
 
@@ -309,7 +310,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
             writerWaitForNumFinished := writerWaitForNumFinished + UInt(1)
             currTempBufferOutputBit := UInt(0)
             temporaryBuffer := UInt(0)
-            //printf("Done writing temp buffer %b\n", temporaryBuffer)
+            printf("Done writing temp buffer %b\n", temporaryBuffer)
 
             wBufferFillNumBitsReadOnRow := UInt(0)
             wBufferFillNumRowsRead := UInt(0)
@@ -337,32 +338,33 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
             }.otherwise{
               currOutputRow := currOutputRow + UInt(1)
             }
+
+            val done = writer.in.ready && (currTempBufferOutputBit === paddedWindowSizeSquaredSizeInBits - UInt(wordSizeInBits)) && (currOutputRow === outputNumRowsPerBitplane - UInt(1)) && (currInputChannel === io.numChannels - UInt(1)) && (currInputBitplane === io.numBits - UInt(1))
+
+            when(done){
+              state := s_finished
+            }.elsewhen(currInputCol + io.windowSize === io.numCols){
+              currInputCol := UInt(0)
+              wBufferFillReadColumnBitInWord := UInt(0)
+              wBufferFillReadColumnWord := UInt(0)
+
+              state := s_fill_bram
+              when(currInputRow + io.windowSize === io.numRows){
+                numBRAMRowsToFill := io.windowSize
+                currInputRow := UInt(0)
+              }.otherwise{
+                numBRAMRowsToFill := io.stride
+                currInputRow := currInputRow + io.stride
+              }
+            }.otherwise{
+              wBufferFillReadColumnBitInWord := (currInputCol + io.stride) & UInt(wordSizeInBits - 1)
+              wBufferFillReadColumnWord := (currInputCol + io.stride) >> wordBitExponent
+              currInputCol := currInputCol + io.stride
+            }
           }.otherwise{
             currTempBufferOutputBit := currTempBufferOutputBit + UInt(wordSizeInBits)
           }
 
-          val done = writer.in.ready && (currTempBufferOutputBit === paddedWindowSizeSquaredSizeInBits - UInt(wordSizeInBits)) && (currOutputRow === outputNumRowsPerBitplane - UInt(1)) && (currInputChannel === io.numChannels - UInt(1)) && (currInputBitplane === io.numBits - UInt(1))
-
-          when(done){
-            state := s_finished
-          }.elsewhen(currInputCol + io.windowSize === io.numCols){
-            currInputCol := UInt(0)
-            wBufferFillReadColumnBitInWord := UInt(0)
-            wBufferFillReadColumnWord := UInt(0)
-
-            state := s_fill_bram
-            when(currInputRow + io.windowSize === io.numRows){
-              numBRAMRowsToFill := io.windowSize
-              currInputRow := UInt(0)
-            }.otherwise{
-              numBRAMRowsToFill := UInt(1)
-              currInputRow := currInputRow + UInt(1)
-            }
-          }.otherwise{
-            wBufferFillReadColumnBitInWord := (currInputCol + UInt(1)) & UInt(wordSizeInBits - 1)
-            wBufferFillReadColumnWord := (currInputCol + UInt(1)) >> wordBitExponent
-            currInputCol := currInputCol + UInt(1)
-          }
         }
       }.otherwise{
         //printf("Writer not finished\n")
