@@ -20,8 +20,8 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
     val numRows = UInt(INPUT, width=16)
     val numBits = UInt(INPUT, width=16)
     val numChannels = UInt(INPUT, width=16)
-    val windowSize = UInt(INPUT, width=16)
-    val stride = UInt(INPUT, width=16)
+    val windowSize = UInt(INPUT, width=8)
+    val stride = UInt(INPUT, width=4) // Keep low for division purposes
     val addrImage =  UInt(INPUT, width=wordSizeInBits)
     val addrResult = UInt(INPUT, width=wordSizeInBits)
     val start = Bool(INPUT)
@@ -174,7 +174,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
 
   windowSizeSquared := io.windowSize * io.windowSize
   paddedWindowSizeSquaredSizeInBits := ((windowSizeSquared + UInt(wordSizeInBits - 1)) >> wordBitExponent) << wordBitExponent
-  outputNumRowsPerBitplane := (io.numRows - io.windowSize + UInt(1)) * (io.numCols - io.windowSize + UInt(1))
+  outputNumRowsPerBitplane := ((io.numRows - io.windowSize)/io.stride + UInt(1)) * ((io.numCols - io.windowSize)/io.stride + UInt(1))
   outputBitplaneSizeInBytes := (outputNumRowsPerBitplane * outputRowSizeInWords) << wordByteExponent
 
   windowSizeMask := (UInt(1) << io.windowSize) - UInt(1)
@@ -227,8 +227,8 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
               currStartBRAMRow := UInt(0)
               wBufferFillReadRow := UInt(0)
             }.otherwise{
-              currStartBRAMRow := currStartBRAMRow + UInt(1)
-              wBufferFillReadRow := currStartBRAMRow + UInt(1)
+              currStartBRAMRow := bramOutputFillingRow + UInt(1)
+              wBufferFillReadRow := bramOutputFillingRow + UInt(1)
             }
             wBufferFillWritePosition := UInt(0)
             wBufferFillReadColumnWord := currInputColWord
@@ -272,22 +272,27 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
           wBufferFillReadColumnWord := wBufferFillReadColumnWord + UInt(1)
           wBufferFillReadColumnBitInWord := UInt(0)
           wBufferFillNumBitsReadOnRow := wBufferFillNumBitsReadOnRow + UInt(wordSizeInBits) - wBufferFillReadColumnBitInWord
-          lastStride := UInt(wordSizeInBits) - wBufferFillReadColumnBitInWord
+          val currStride = UInt(wordSizeInBits) - wBufferFillReadColumnBitInWord
+          lastStride := currStride
+          remainMask := (UInt(1,width=16) << currStride) - UInt(1,width=16)
+          printf("wBufferFillNumBitsReadOnRow = %d, wordSizeInBits = %d, wBufferFillReadColumnBitInWord = %d\n", wBufferFillNumBitsReadOnRow, UInt(wordSizeInBits), wBufferFillReadColumnBitInWord)
+          printf("Remain mask shift: %d\n", (UInt(1,width=8) << currStride) - UInt(1,width=8))
         }.otherwise{
           wBufferFillReadColumnWord := currInputColWord
           wBufferFillReadColumnBitInWord := currInputColBitInWord
           wBufferFillNumBitsReadOnRow := UInt(0)
           wBufferFillNumRowsRead := wBufferFillNumRowsRead + UInt(1)
-          lastStride := io.windowSize
+          lastStride := io.windowSize - wBufferFillNumBitsReadOnRow
           when(wBufferFillReadRow === io.windowSize - UInt(1)){
             wBufferFillReadRow := UInt(0)
           }.otherwise{
             wBufferFillReadRow := wBufferFillReadRow + UInt(1)
           }
+
+          remainMask := (UInt(1) << (io.windowSize - wBufferFillNumBitsReadOnRow)) - UInt(1)
         }
         printf("wBufferFillReadColumnBitInWord = %d\n", wBufferFillReadColumnBitInWord)
         lastCycleColBitInWord := wBufferFillReadColumnBitInWord
-        remainMask := (UInt(1) << (io.windowSize - wBufferFillNumBitsReadOnRow)) - UInt(1)
 
         bramReadPort.req.addr := wBufferFillReadRow * inputWordsPerRow + wBufferFillReadColumnWord
         //printf("Reading from bram address: %x\n", wBufferFillReadRow * inputWordsPerRow + wBufferFillReadColumnWord)
@@ -321,7 +326,7 @@ class TestSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int) 
             state := s_fill_window_size_buffer
             when(currOutputRow === outputNumRowsPerBitplane - UInt(1)){ // Finished with a channel batch
               printf("Done writing channel batch\n")
-              numBRAMRowsToFill := UInt(io.windowSize)
+              numBRAMRowsToFill := io.windowSize
               currOutputRow := UInt(0)
               when(currInputChannel === io.numChannels - UInt(1)){ // Finished with all channels of a bitplane
                 printf("Done writing bitplane\n")

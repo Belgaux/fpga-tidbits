@@ -38,7 +38,7 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   
   const uint32_t wordSizeInBytes = 8; // In bytes
   const uint32_t wordSizeInBits = 8*wordSizeInBytes;
-  const uint32_t numCols = 12, numRows = 11, numChannels = 1, numBits = 1, windowSize = 11, stride = 1;
+  const uint32_t numCols = 1, numRows = 11, numChannels = 1, numBits = 1, windowSize = 11, stride = 4;
 
   if((numCols - windowSize) % stride != 0){
     printf("Invalid combination of numCols, windowSize and stride\n");
