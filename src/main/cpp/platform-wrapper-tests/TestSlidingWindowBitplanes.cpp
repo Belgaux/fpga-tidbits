@@ -38,7 +38,7 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   
   const uint32_t wordSizeInBytes = 8; // In bytes
   const uint32_t wordSizeInBits = 8*wordSizeInBytes;
-  const uint32_t numCols = 1, numRows = 11, numChannels = 1, numBits = 1, windowSize = 11, stride = 4;
+  const uint32_t numCols = 27, numRows = 58, numChannels = 5, numBits = 1, windowSize = 1, stride = 1;
 
   if((numCols - windowSize) % stride != 0){
     printf("Invalid combination of numCols, windowSize and stride\n");
@@ -66,8 +66,8 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
       }
     }
   }
-  //image[0] = 2;
-  //image[8] = 1;
+  image[0] = 0;
+  image[8] = 1;
 
   const uint32_t outputWindowSizeInBytes = ceilNum(windowSize*windowSize, wordSizeInBits) / 8;
   const uint32_t outputRowSizeInBytes = outputWindowSizeInBytes * numChannels;
@@ -82,10 +82,11 @@ void Run_TestSlidingWindowBitplanes(WrapperRegDriver* platform)
   for(int u = 0; u < numBits; u++){
     for(int s = 0; s < numWindowsY; s++){
       for(int t = 0; t < numWindowsX; t++){
-	int currBit = 0;
-	int currByte = 0;
 	memset(expectedResult + (u * numWindowsY * numWindowsX + s * numWindowsX + t) * outputRowSizeInBytes,0,outputRowSizeInBytes);
 	for(int j = 0; j < numChannels; j++){
+	  
+	  int currBit = 0;
+	  int currByte = j * outputWindowSizeInBytes;
 	  currByte = j * outputWindowSizeInBytes;
 	  for(int l = 0; l < windowSize; l++){
 	    for(int k = 0; k < windowSize; k++){
