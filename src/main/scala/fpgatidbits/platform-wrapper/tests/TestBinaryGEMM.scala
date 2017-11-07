@@ -20,6 +20,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     val addrA = UInt(INPUT, width = 64)
     val addrR = UInt(INPUT, width = 64)
     val byte_count_R = UInt(INPUT, width = 32)
+    val channels = UInt(INPUT, width = 32)
     val W_R = UInt(INPUT, width = 16)
     val W_C = UInt(INPUT, width = 16)
     val A_R = UInt(INPUT, width = 16)
@@ -47,11 +48,24 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
   io.done := Bool(false)
 
+  //////// BRAM
+  
+  /*
+  val bram = Module(new DualPortBRAM(addrBits = log2Up(num_accs), dataBits = word_size)).io
+  val write_port = bram.ports(0)
+  write_port.req.addr := index
+  write_port.writeData := UInt(4095)
+  write_port.req.writeEn := Bool(false)
+  val read_port  = bram.ports(1)
+  */
+
+
   //////// REGISTERS
   
   val write_index = Reg(init=UInt(0, width=32))
   val accs = Mem(SInt(width=word_size), num_accs)
   val elems = Reg(init=UInt(0, width = 32))
+  val chn = Reg(init = UInt(0, width = 16))
 
   // For each row in W, for each column in A
   val row = Reg(init = UInt(0, width = 16))
@@ -102,14 +116,16 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
   ///////// INPUT
   
+  val chn_stride_w = bytes_per_elem * io.W_C * io.W_R * io.w_depth
+  val chn_stride_a = bytes_per_elem * io.A_C * io.A_R * io.a_depth
   val plane_w_stride = bytes_per_elem * io.W_C * io.W_R
   val plane_a_stride = bytes_per_elem * io.A_R * io.A_C
   val reader_stride = bytes_per_elem * io.W_C // This is one whole vector of the matrix
   val srW = make_reader(port=0, 
-    baseAddr=io.addrW + row * reader_stride + cur_w * plane_w_stride, 
+    baseAddr=io.addrW + row * reader_stride + cur_w * plane_w_stride + chn*chn_stride_w,
     byteCount = reader_stride, start=Bool(false))
   val srA = make_reader(port=1,
-    baseAddr=io.addrA + col * reader_stride + cur_a * plane_a_stride,
+    baseAddr=io.addrA + col * reader_stride + cur_a * plane_a_stride + chn*chn_stride_a,
     byteCount = reader_stride, start=Bool(false))
 
   val in_queue_w = FPGAQueue(srW.out, input_queue_size)
@@ -130,11 +146,12 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
   // TODO: Give these states more descriptive names
   // TODO: Also possible todo, break up the state machine in different modules? Might not be too easy
-  val s_idle :: s_buf :: s_compute1 :: s_compute2 :: s_one :: s_two :: s_three :: s_four :: s_five :: s_six :: s_write:: s_done :: s_wait :: Nil = Enum(UInt(), 13)
+  val s_idle :: s_buf :: s_compute1 :: s_compute2 :: s_one :: s_two :: s_three :: s_four :: s_five :: s_six :: s_write:: s_done :: s_wait :: s_chn :: Nil = Enum(UInt(), 14)
   val state = Reg(init=UInt(s_idle))
 
   switch (state) {
     is (s_idle) {
+      chn     := UInt(0)
       cur_w       := UInt(0)
       cur_a       := UInt(0)
       row         := UInt(0)
@@ -142,7 +159,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
       write_index := UInt(0)
       elems       := UInt(0)
       for (i <- 0 until num_accs) {
-        accs(i) := SInt(0)  
+        accs(i) := SInt(0)
       }
       when (io.start) {
         state := s_one
@@ -251,7 +268,26 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     is (s_wait) {
       // Wait for StreamWriter to finish writing to DRAM
       sw.start := Bool(true)
-      when (sw.finished) { state := s_done }
+      when (sw.finished) {
+        chn := chn + UInt(1)
+        state := s_chn
+      }
+    }
+
+    is (s_chn) {
+      when (chn === io.channels) { state := s_done }
+      .otherwise { 
+        cur_w       := UInt(0)
+        cur_a       := UInt(0)
+        row         := UInt(0)
+        col         := UInt(0)
+        write_index := UInt(0)
+        elems       := UInt(0)
+        for (i <- 0 until num_accs) {
+          accs(i) := SInt(0)
+        }
+        state := s_one
+      }
     }
 
     is (s_done) {

@@ -45,6 +45,7 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
     */
 
       int word_size = 64;
+      int chn = 1;
       
       /////////// W
       int wr = rr;
@@ -94,7 +95,7 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
           r = (r==0 ? 1 : r);
           //printf("%ld ", r);
           A[i*ac + j] = r;
-          AT[j*ac + i] = r; // A-transposed is what needs to be packed in memory
+          AT[j*ar + i] = r; // A-transposed is what needs to be packed in memory
         }
         //printf("\n");
       }
@@ -181,6 +182,7 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
       t.set_addrA((AccelDblReg) dram_a);
       t.set_addrR((AccelDblReg) dram_r);
       t.set_byte_count_R(r_bytes);
+      t.set_channels(chn);
       t.set_W_R(wpr);
       t.set_W_C(wpc);
       t.set_A_R(apc);
