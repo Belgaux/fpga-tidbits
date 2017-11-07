@@ -9,7 +9,7 @@ import fpgatidbits.rosetta._
 class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
   val word_size = 64
-  val num_accs = 1024
+  val num_accs = 256
   val output_queue_size = 8
   val input_queue_size = 8
   val bytes_per_elem = UInt(word_size/8)
@@ -20,12 +20,12 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     val addrA = UInt(INPUT, width = 64)
     val addrR = UInt(INPUT, width = 64)
     val byte_count_R = UInt(INPUT, width = 32)
-    val W_R = UInt(INPUT, width = 32)
-    val W_C = UInt(INPUT, width = 32)
-    val A_R = UInt(INPUT, width = 32)
-    val A_C = UInt(INPUT, width = 32)
-    val w_depth = UInt(INPUT, width = 32)
-    val a_depth = UInt(INPUT, width = 32)
+    val W_R = UInt(INPUT, width = 16)
+    val W_C = UInt(INPUT, width = 16)
+    val A_R = UInt(INPUT, width = 16)
+    val A_C = UInt(INPUT, width = 16)
+    val w_depth = UInt(INPUT, width = 8)
+    val a_depth = UInt(INPUT, width = 8)
 
     val start = Bool(INPUT)
     val done = Bool(OUTPUT)
@@ -50,16 +50,16 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   //////// REGISTERS
   
   val write_index = Reg(init=UInt(0, width=32))
-  val accs = Vec.fill(num_accs) { Reg(init=SInt(0, width = word_size)) }
+  val accs = Mem(SInt(width=word_size), num_accs)
   val elems = Reg(init=UInt(0, width = 32))
 
   // For each row in W, for each column in A
-  val row = Reg(init = UInt(0, width = 32))
-  val col = Reg(init = UInt(0, width = 32))
+  val row = Reg(init = UInt(0, width = 16))
+  val col = Reg(init = UInt(0, width = 16))
 
   // Bit-plane counters
-  val cur_w = Reg(init=UInt(0, width = 32))
-  val cur_a = Reg(init=UInt(0, width = 32))
+  val cur_w = Reg(init=UInt(0, width = 16))
+  val cur_a = Reg(init=UInt(0, width = 16))
 
   /////// WIRES
 
@@ -73,7 +73,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   val negative = Bool()
   negative := (negw ^ nega) === UInt(1)
 
-  val significance = UInt()
+  val significance = UInt(width=log2Up(8*8))
   significance := cur_a + cur_w
 
   // Index for result-matrix accumulators
@@ -122,14 +122,15 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   dot.din1 <> in_queue_a
   val dot_queue = FPGAQueue(dot.dout, input_queue_size)
   dot_queue.ready := Bool(false)
-  val dot_tmp = Reg(init=UInt(0, width=word_size))
+  val dot_tmp = Reg(init=UInt(0, width=32))
+  val acc_tmp = Reg(init=SInt(0, width=word_size))
 
 
   ///////// STATE MACHINE
 
   // TODO: Give these states more descriptive names
   // TODO: Also possible todo, break up the state machine in different modules? Might not be too easy
-  val s_idle :: s_compute :: s_one :: s_two :: s_three :: s_four :: s_five :: s_six :: s_write:: s_done :: s_wait :: Nil = Enum(UInt(), 11)
+  val s_idle :: s_buf :: s_compute1 :: s_compute2 :: s_one :: s_two :: s_three :: s_four :: s_five :: s_six :: s_write:: s_done :: s_wait :: Nil = Enum(UInt(), 13)
   val state = Reg(init=UInt(s_idle))
 
   switch (state) {
@@ -154,7 +155,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
         dot_tmp := dot_queue.bits << significance
 
         elems := elems + UInt(1)
-        state := s_compute
+        state := s_compute1
       }
       .otherwise {
         srW.start := Bool(true)
@@ -162,10 +163,15 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
       }
     }
 
-    is (s_compute) {
+    is (s_compute1) {
+      acc_tmp := accs(index)  
+      state := s_compute2
+    }
+
+    is (s_compute2) {
       accs(index) := Mux(negative,
-        accs(index) - dot_tmp,
-        accs(index) + dot_tmp)
+        acc_tmp - dot_tmp,
+        acc_tmp + dot_tmp)
       state := s_two
     }
 
@@ -215,11 +221,17 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     is (s_six) {
       when (cur_w === io.w_depth) {
         write_index := UInt(0)
-        state := s_write
+        state := s_buf
       }
       .otherwise {
         state := s_one  
       }
+    }
+
+    is (s_buf) {
+      sw.start := Bool(true)
+      acc_tmp := accs(write_index)
+      state := s_write  
     }
 
     is (s_write) {
@@ -228,10 +240,11 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
       out_queue.valid := Bool(true)
       when (out_queue.ready) {
         write_index := write_index + UInt(1)
-        out_queue.bits := accs(write_index)
+        out_queue.bits := acc_tmp
         when (write_index === ((io.W_R * io.A_C) - UInt(1))) {
           state := s_wait
         }
+        .otherwise { state := s_buf }
       }
     }
 
