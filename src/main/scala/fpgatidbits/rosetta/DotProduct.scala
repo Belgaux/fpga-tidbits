@@ -10,7 +10,8 @@ class DotProduct(w: Int) extends Module {
 
   val s_compute :: s_pcnt :: s_done :: Nil = Enum(UInt(), 3)
   val state = Reg(init=UInt(s_compute))
-  val tmp = Reg(init=UInt(0, width = w))
+  //val tmp = Reg(init=UInt(0, width = w))
+  val tmp1 = Reg(init=UInt(0, width = 32))
   val out = Reg(init=UInt(0, width = w))
 
   io.din0.ready := Bool(false)
@@ -23,13 +24,15 @@ class DotProduct(w: Int) extends Module {
       when(io.din0.valid & io.din1.valid) {
         io.din0.ready := Bool(true)
         io.din1.ready := Bool(true)
-        tmp := io.din0.bits & io.din1.bits
+        //tmp := io.din0.bits & io.din1.bits
+        out := PopCount((io.din0.bits & io.din1.bits)(63,32))
+        tmp1 := (io.din0.bits & io.din1.bits)(31,0)
 	      state := s_pcnt
       }
     }
 
     is (s_pcnt) {
-      out := PopCount(tmp)
+      out := out + PopCount(tmp1)
       state := s_done
     }
 

@@ -6,27 +6,34 @@ import fpgatidbits.dma._
 import fpgatidbits.ocm._
 import fpgatidbits.rosetta._
 
+// Right-hand side must be given transposed
+
 class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
   val word_size = 64
   val num_accs = 256
-  val output_queue_size = 8
-  val input_queue_size = 8
+  val output_queue_size = 1
+  val input_queue_size = 1
   val bytes_per_elem = UInt(word_size/8)
+
+  // This has to be camel-case for some reason??
   val numMemPorts = 3
 
   val io = new GenericAcceleratorIF(numMemPorts, p) {
-    val addrW = UInt(INPUT, width = 64)
-    val addrA = UInt(INPUT, width = 64)
-    val addrR = UInt(INPUT, width = 64)
-    val byte_count_R = UInt(INPUT, width = 32)
-    val channels = UInt(INPUT, width = 32)
-    val W_R = UInt(INPUT, width = 16)
-    val W_C = UInt(INPUT, width = 16)
-    val A_R = UInt(INPUT, width = 16)
-    val A_C = UInt(INPUT, width = 16)
-    val w_depth = UInt(INPUT, width = 8)
-    val a_depth = UInt(INPUT, width = 8)
+    val lhs_addr = UInt(INPUT, width = 64)
+    val rhs_addr = UInt(INPUT, width = 64)
+    val res_addr = UInt(INPUT, width = 64)
+    val res_byte_count = UInt(INPUT, width = 32)
+
+    val lhs_rows = UInt(INPUT, width = 16)
+    val lhs_cols = UInt(INPUT, width = 16)
+    val lhs_bits = UInt(INPUT, width = 8)
+    val lhs_issigned = Bool(INPUT)
+
+    val rhs_rows = UInt(INPUT, width = 16)
+    val rhs_cols = UInt(INPUT, width = 16)
+    val rhs_bits = UInt(INPUT, width = 8)
+    val rhs_issigned = Bool(INPUT)
 
     val start = Bool(INPUT)
     val done = Bool(OUTPUT)
@@ -46,62 +53,52 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     sr
   }
 
-  io.done := Bool(false)
-
-  //////// BRAM
-  
-  /*
-  val bram = Module(new DualPortBRAM(addrBits = log2Up(num_accs), dataBits = word_size)).io
-  val write_port = bram.ports(0)
-  write_port.req.addr := index
-  write_port.writeData := UInt(4095)
-  write_port.req.writeEn := Bool(false)
-  val read_port  = bram.ports(1)
-  */
-
 
   //////// REGISTERS
   
   val write_index = Reg(init=UInt(0, width=32))
-  val accs = Mem(SInt(width=word_size), num_accs)
-  val elems = Reg(init=UInt(0, width = 32))
-  val chn = Reg(init = UInt(0, width = 16))
+  val num_words = Reg(init=UInt(0, width = 32))
 
-  // For each row in W, for each column in A
-  val row = Reg(init = UInt(0, width = 16))
-  val col = Reg(init = UInt(0, width = 16))
+  // TODO: Replace this with BRAM
+  val accs = Mem(SInt(width=word_size), num_accs)
+
+  // For each row in W, for each row in A
+  // Equivalent to i,j in Yaman's 'gemmBitserial_generic_naive'
+  val row_rhs = Reg(init = UInt(0, width = 16))
+  val row_lhs = Reg(init = UInt(0, width = 16))
 
   // Bit-plane counters
-  val cur_w = Reg(init=UInt(0, width = 16))
-  val cur_a = Reg(init=UInt(0, width = 16))
+  val lbit = Reg(init=UInt(0, width = 16))
+  val rbit = Reg(init=UInt(0, width = 16))
+
+  // Index for result-matrix accumulators
+  val index = Reg(init=UInt(0))
+  index := row_rhs * io.lhs_rows + row_lhs
+
+  // Accumulate result of all bitplanes for each row-pair
+  val row_res = Reg(init=SInt(0, width=word_size))
+  // Acuumulate AND-PCNT result within each bitplane row-pair
+  val acc_dot_row = Reg(init=UInt(0, width=word_size))
+
 
   /////// WIRES
 
-  // Sign bits for bitserial
-  // Assume bitplanes are stored in "little endian" order
-  val negw = UInt()
-  val nega = UInt()
-  negw := cur_w === io.w_depth - UInt(1)
-  nega := cur_a === io.a_depth - UInt(1)
+  // Sign-bits for bitserial algorithm
+  // Assume that bitplanes are stored in "little endian" order
+  val neg_lhs = Bool()
+  val neg_rhs = Bool()
+  neg_lhs := io.lhs_issigned && (lbit === (io.lhs_bits - UInt(1)))
+  neg_rhs := io.rhs_issigned && (rbit === (io.rhs_bits - UInt(1)))
 
-  val negative = Bool()
-  negative := (negw ^ nega) === UInt(1)
-
-  val significance = UInt(width=log2Up(8*8))
-  significance := cur_a + cur_w
-
-  // Index for result-matrix accumulators
-  val index = UInt()
-  index := row * io.A_C + col
-
+  io.done := Bool(false)
 
   //////// OUTPUT
-  
+ 
   val sw = Module(new StreamWriter(new StreamWriterParams(
     streamWidth = p.memDataBits, mem = p.toMemReqParams(), chanID = 0
   ))).io
-  sw.baseAddr := io.addrR
-  sw.byteCount := io.byte_count_R
+  sw.baseAddr := io.res_addr
+  sw.byteCount := io.res_byte_count
   sw.start := Bool(false)
   sw.req <> io.memPort(2).memWrReq
   sw.wdat <> io.memPort(2).memWrDat
@@ -110,69 +107,74 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
   val out_queue = Decoupled(SInt(width=word_size))
   out_queue.valid := Bool(false)
-  out_queue.bits := UInt(4095) // debug value, should never happen
+  out_queue.bits := UInt(666) // debug value, should never happen
   sw.in <> FPGAQueue(out_queue, output_queue_size)
 
 
   ///////// INPUT
-  
-  val chn_stride_w = bytes_per_elem * io.W_C * io.W_R * io.w_depth
-  val chn_stride_a = bytes_per_elem * io.A_C * io.A_R * io.a_depth
-  val plane_w_stride = bytes_per_elem * io.W_C * io.W_R
-  val plane_a_stride = bytes_per_elem * io.A_R * io.A_C
-  val reader_stride = bytes_per_elem * io.W_C // This is one whole vector of the matrix
+
+  // TODO: Optimize these multiplications
+  val lhs_bytes_per_bitplane = bytes_per_elem * io.lhs_cols * io.lhs_rows
+  val rhs_bytes_per_bitplane = bytes_per_elem * io.rhs_rows * io.rhs_cols
+  val bytes_per_row = bytes_per_elem * io.lhs_cols
+
   val srW = make_reader(port=0, 
-    baseAddr=io.addrW + row * reader_stride + cur_w * plane_w_stride + chn*chn_stride_w,
-    byteCount = reader_stride, start=Bool(false))
+    baseAddr=io.lhs_addr + row_lhs * bytes_per_row + lbit * lhs_bytes_per_bitplane,
+    byteCount=bytes_per_row, start=Bool(false))
+
   val srA = make_reader(port=1,
-    baseAddr=io.addrA + col * reader_stride + cur_a * plane_a_stride + chn*chn_stride_a,
-    byteCount = reader_stride, start=Bool(false))
+    baseAddr=io.rhs_addr + row_rhs * bytes_per_row + rbit * rhs_bytes_per_bitplane,
+    byteCount=bytes_per_row, start=Bool(false))
 
   val in_queue_w = FPGAQueue(srW.out, input_queue_size)
   val in_queue_a = FPGAQueue(srA.out, input_queue_size)
 
 
   ///////// PROCESSING ELEMENT
+
   val dot = Module(new DotProduct(word_size)).io
   dot.din0 <> in_queue_w
   dot.din1 <> in_queue_a
   val dot_queue = FPGAQueue(dot.dout, input_queue_size)
   dot_queue.ready := Bool(false)
-  val dot_tmp = Reg(init=UInt(0, width=32))
-  val acc_tmp = Reg(init=SInt(0, width=word_size))
 
 
   ///////// STATE MACHINE
 
-  // TODO: Give these states more descriptive names
-  // TODO: Also possible todo, break up the state machine in different modules? Might not be too easy
-  val s_idle :: s_buf :: s_compute1 :: s_compute2 :: s_one :: s_two :: s_three :: s_four :: s_five :: s_six :: s_write:: s_done :: s_wait :: s_chn :: Nil = Enum(UInt(), 14)
+  // TODO: FILL IN THIS ENUM
+  val s_idle :: s_inner :: s_inner_test :: s_inner_post :: s_rbit_test :: s_lbit_test :: s_row_lhs_test :: s_row_rhs_test :: s_write :: s_wait :: s_done :: Nil = Enum(UInt(), 11)
   val state = Reg(init=UInt(s_idle))
 
   switch (state) {
     is (s_idle) {
-      chn     := UInt(0)
-      cur_w       := UInt(0)
-      cur_a       := UInt(0)
-      row         := UInt(0)
-      col         := UInt(0)
-      write_index := UInt(0)
-      elems       := UInt(0)
+      row_rhs       := UInt(0)
+      row_lhs       := UInt(0)
+      row_res       := SInt(0)
+      lbit          := UInt(0)
+      rbit          := UInt(0)
+      write_index   := UInt(0)
+      acc_dot_row  := UInt(0)
+      num_words     := UInt(0)
+
       for (i <- 0 until num_accs) {
         accs(i) := SInt(0)
       }
+
       when (io.start) {
-        state := s_one
+
+        assert(io.lhs_cols === io.rhs_cols)
+
+        state := s_inner
       }
     }
-    
-    is (s_one) {
+
+    is (s_inner) {
       when (dot_queue.valid) {
         dot_queue.ready := Bool(true)
-        dot_tmp := dot_queue.bits << significance
+        acc_dot_row := acc_dot_row + dot_queue.bits
+        num_words := num_words + UInt(1)
 
-        elems := elems + UInt(1)
-        state := s_compute1
+        state := s_inner_test
       }
       .otherwise {
         srW.start := Bool(true)
@@ -180,75 +182,74 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
       }
     }
 
-    is (s_compute1) {
-      acc_tmp := accs(index)  
-      state := s_compute2
-    }
+    is (s_inner_test) {
+      when (num_words === io.lhs_cols) {
+        acc_dot_row := acc_dot_row << (lbit + rbit)
+        num_words := UInt(0)
 
-    is (s_compute2) {
-      accs(index) := Mux(negative,
-        acc_tmp - dot_tmp,
-        acc_tmp + dot_tmp)
-      state := s_two
-    }
-
-    is (s_two) {
-      when (elems === io.W_C) { // Done with all elements within one vector mul
-        elems := UInt(0)
-        col := col + UInt(1)
-        state := s_three
-      }
-      .otherwise { state := s_one }
-    }
-
-    is (s_three) {
-      when (col === io.A_C) { // Done with all columns for one row
-        row := row + UInt(1)
-        state := s_four
+        state := s_inner_post
       }
       .otherwise {
-        state := s_one
+        state := s_inner
       }
     }
 
-    is (s_four) {
-      when (row === io.W_R) { // Done with all rows
-        row := UInt(0)
-        col := UInt(0)
-        cur_a := cur_a + UInt(1)
-        state := s_five
+    is (s_inner_post) {
+      printf("acc_dot_row=%b\n", acc_dot_row)
+      row_res := Mux((UInt(neg_lhs) ^ UInt(neg_rhs)) === UInt(1),
+        row_res - acc_dot_row,
+        row_res + acc_dot_row)
+
+      acc_dot_row := UInt(0)
+      rbit := rbit + UInt(1)
+      state := s_rbit_test
+    }
+
+    is (s_rbit_test) {
+      when (rbit === io.rhs_bits) {
+        rbit := UInt(0)
+        lbit := lbit + UInt(1)
+        state := s_lbit_test
       }
       .otherwise {
-        col := UInt(0)
-        state := s_one
+        state := s_inner
       }
     }
 
-    is (s_five) {
-      when (cur_a === io.a_depth) {
-        cur_w := cur_w + UInt(1)
-        cur_a := UInt(0)
-        state := s_six
+    is (s_lbit_test) {
+      when (lbit === io.lhs_bits) {
+        // store row_res into result matrix
+        accs(index) := accs(index) + row_res
+
+        lbit := UInt(0)
+        row_lhs := row_lhs + UInt(1)
+        state := s_row_lhs_test
       }
       .otherwise {
-        state := s_one
+        state := s_inner
       }
     }
 
-    is (s_six) {
-      when (cur_w === io.w_depth) {
-        write_index := UInt(0)
-        state := s_buf
+    is (s_row_lhs_test) {
+      row_res := SInt(0)
+      when (row_lhs === io.lhs_rows) {
+        row_lhs := UInt(0)
+        row_rhs := row_rhs + UInt(1)
+        state := s_row_rhs_test
       }
       .otherwise {
-        state := s_one  
+        state := s_inner
       }
     }
 
-    is (s_buf) {
-      sw.start := Bool(true)
-      acc_tmp := accs(write_index)
-      state := s_write  
+    is (s_row_rhs_test) {
+      when (row_rhs === io.rhs_rows) {
+        row_rhs := UInt(0)
+        state := s_write
+      }
+      .otherwise {
+        state := s_inner
+      }
     }
 
     is (s_write) {
@@ -257,11 +258,11 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
       out_queue.valid := Bool(true)
       when (out_queue.ready) {
         write_index := write_index + UInt(1)
-        out_queue.bits := acc_tmp
-        when (write_index === ((io.W_R * io.A_C) - UInt(1))) {
+        out_queue.bits := accs(write_index)
+        when (write_index === ((io.lhs_rows * io.rhs_rows) - UInt(1))) {
           state := s_wait
         }
-        .otherwise { state := s_buf }
+        .otherwise { state := s_write }
       }
     }
 
@@ -269,24 +270,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
       // Wait for StreamWriter to finish writing to DRAM
       sw.start := Bool(true)
       when (sw.finished) {
-        chn := chn + UInt(1)
-        state := s_chn
-      }
-    }
-
-    is (s_chn) {
-      when (chn === io.channels) { state := s_done }
-      .otherwise { 
-        cur_w       := UInt(0)
-        cur_a       := UInt(0)
-        row         := UInt(0)
-        col         := UInt(0)
-        write_index := UInt(0)
-        elems       := UInt(0)
-        for (i <- 0 until num_accs) {
-          accs(i) := SInt(0)
-        }
-        state := s_one
+        state := s_done
       }
     }
 
