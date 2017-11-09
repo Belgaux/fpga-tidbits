@@ -11,9 +11,8 @@ import fpgatidbits.rosetta._
 class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
   val word_size = 64
-  val num_accs = 256
-  val output_queue_size = 1
-  val input_queue_size = 1
+  val output_queue_size = 8
+  val input_queue_size = 8
   val bytes_per_elem = UInt(word_size/8)
 
   // This has to be camel-case for some reason??
@@ -59,9 +58,6 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   val write_index = Reg(init=UInt(0, width=32))
   val num_words = Reg(init=UInt(0, width = 32))
 
-  // TODO: Replace this with BRAM
-  val accs = Mem(SInt(width=word_size), num_accs)
-
   // For each row in W, for each row in A
   // Equivalent to i,j in Yaman's 'gemmBitserial_generic_naive'
   val row_rhs = Reg(init = UInt(0, width = 16))
@@ -99,7 +95,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   ))).io
   sw.baseAddr := io.res_addr
   sw.byteCount := io.res_byte_count
-  sw.start := Bool(false)
+  sw.start := io.start
   sw.req <> io.memPort(2).memWrReq
   sw.wdat <> io.memPort(2).memWrDat
   sw.rsp <> io.memPort(2).memWrRsp
@@ -118,31 +114,31 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   val rhs_bytes_per_bitplane = bytes_per_elem * io.rhs_rows * io.rhs_cols
   val bytes_per_row = bytes_per_elem * io.lhs_cols
 
-  val srW = make_reader(port=0, 
+  val lhs_reader = make_reader(port=0, 
     baseAddr=io.lhs_addr + row_lhs * bytes_per_row + lbit * lhs_bytes_per_bitplane,
     byteCount=bytes_per_row, start=Bool(false))
 
-  val srA = make_reader(port=1,
+  val rhs_reader = make_reader(port=1,
     baseAddr=io.rhs_addr + row_rhs * bytes_per_row + rbit * rhs_bytes_per_bitplane,
     byteCount=bytes_per_row, start=Bool(false))
 
-  val in_queue_w = FPGAQueue(srW.out, input_queue_size)
-  val in_queue_a = FPGAQueue(srA.out, input_queue_size)
-
+  def start_readers() = {
+    lhs_reader.start := Bool(true)
+    rhs_reader.start := Bool(true)  
+  }
 
   ///////// PROCESSING ELEMENT
 
   val dot = Module(new DotProduct(word_size)).io
-  dot.din0 <> in_queue_w
-  dot.din1 <> in_queue_a
+  dot.din0 <> FPGAQueue(lhs_reader.out, input_queue_size)
+  dot.din1 <> FPGAQueue(rhs_reader.out, input_queue_size)
   val dot_queue = FPGAQueue(dot.dout, input_queue_size)
   dot_queue.ready := Bool(false)
 
 
   ///////// STATE MACHINE
 
-  // TODO: FILL IN THIS ENUM
-  val s_idle :: s_inner :: s_inner_test :: s_inner_post :: s_rbit_test :: s_lbit_test :: s_row_lhs_test :: s_row_rhs_test :: s_write :: s_wait :: s_done :: Nil = Enum(UInt(), 11)
+  val s_idle :: s_inner :: s_inner_test :: s_inner_post :: s_rbit_test :: s_lbit_test :: s_row_lhs_test :: s_row_rhs_test :: s_wait :: s_done :: Nil = Enum(UInt(), 10)
   val state = Reg(init=UInt(s_idle))
 
   switch (state) {
@@ -153,17 +149,13 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
       lbit          := UInt(0)
       rbit          := UInt(0)
       write_index   := UInt(0)
-      acc_dot_row  := UInt(0)
+      acc_dot_row   := UInt(0)
       num_words     := UInt(0)
 
-      for (i <- 0 until num_accs) {
-        accs(i) := SInt(0)
-      }
-
       when (io.start) {
-
         assert(io.lhs_cols === io.rhs_cols)
 
+        start_readers()
         state := s_inner
       }
     }
@@ -176,17 +168,13 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
         state := s_inner_test
       }
-      .otherwise {
-        srW.start := Bool(true)
-        srA.start := Bool(true)
-      }
     }
 
     is (s_inner_test) {
       when (num_words === io.lhs_cols) {
         acc_dot_row := acc_dot_row << (lbit + rbit)
         num_words := UInt(0)
-
+        
         state := s_inner_post
       }
       .otherwise {
@@ -195,37 +183,39 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     }
 
     is (s_inner_post) {
-      printf("acc_dot_row=%b\n", acc_dot_row)
       row_res := Mux((UInt(neg_lhs) ^ UInt(neg_rhs)) === UInt(1),
         row_res - acc_dot_row,
         row_res + acc_dot_row)
 
-      acc_dot_row := UInt(0)
       rbit := rbit + UInt(1)
       state := s_rbit_test
     }
 
     is (s_rbit_test) {
+      acc_dot_row := UInt(0)
       when (rbit === io.rhs_bits) {
         rbit := UInt(0)
         lbit := lbit + UInt(1)
         state := s_lbit_test
       }
       .otherwise {
+        start_readers()
         state := s_inner
       }
     }
 
     is (s_lbit_test) {
       when (lbit === io.lhs_bits) {
-        // store row_res into result matrix
-        accs(index) := accs(index) + row_res
+        // Put complete row result in the output queue
+        out_queue.bits := row_res
+        out_queue.valid := Bool(true)
 
         lbit := UInt(0)
         row_lhs := row_lhs + UInt(1)
         state := s_row_lhs_test
       }
       .otherwise {
+        start_readers()
         state := s_inner
       }
     }
@@ -238,6 +228,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
         state := s_row_rhs_test
       }
       .otherwise {
+        start_readers()
         state := s_inner
       }
     }
@@ -245,30 +236,16 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     is (s_row_rhs_test) {
       when (row_rhs === io.rhs_rows) {
         row_rhs := UInt(0)
-        state := s_write
+        state := s_wait
       }
       .otherwise {
+        start_readers()
         state := s_inner
-      }
-    }
-
-    is (s_write) {
-      // start producing and consuming output
-      sw.start := Bool(true)
-      out_queue.valid := Bool(true)
-      when (out_queue.ready) {
-        write_index := write_index + UInt(1)
-        out_queue.bits := accs(write_index)
-        when (write_index === ((io.lhs_rows * io.rhs_rows) - UInt(1))) {
-          state := s_wait
-        }
-        .otherwise { state := s_write }
       }
     }
 
     is (s_wait) {
       // Wait for StreamWriter to finish writing to DRAM
-      sw.start := Bool(true)
       when (sw.finished) {
         state := s_done
       }

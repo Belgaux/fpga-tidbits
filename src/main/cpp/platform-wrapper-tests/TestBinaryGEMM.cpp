@@ -23,34 +23,37 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
  
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
   std::mt19937_64 generator (seed);
-  std::uniform_int_distribution<s64> distribution(0, 3); 
+  std::uniform_int_distribution<s64> distribution(-1, 1); 
 
 
   // loops for testing lots of matrices
-  for (int rr = 2; rr < 3; ++rr) {
-    for (int cc = 1; cc < 8; ++cc) {
+  for (int rr = 1; rr < 4; ++rr) {
+    for (int cc = 1; cc < 32; ++cc) {
 
     ////////////// GENERATING TEST MATRICES //////////
 
       int word_size = 64;
       
-      int wr = 2;
-      int wc = 65;
+      int wr = rr;
+      int wc = cc*64;
       int wd = 2;
       s64 W[wr*wc];
 
       int ar = wc;
-      int ac = 1;
+      int ac = rr;
       int ad = 2;
 
       int out_rows = wr;
       int out_cols = ac;
+
+      int lhs_issigned = 1;
+      int rhs_issigned = 1;
       
       /////////// W
       for (int i = 0; i < wr; ++i) {
         for (int j = 0; j < wc; ++j) {
           s64 r = distribution(generator);
-          //r = (r == 0 ? -1 : r);
+          r = (r == 0 ? -1 : r);
           W[i*wc + j] = r;
         }
       }
@@ -77,7 +80,7 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
       for (int i = 0; i < ar; ++i) {
         for (int j = 0; j < ac; ++j) {
           s64 r = distribution(generator);
-          //r = (r==0 ? 1 : r);
+          r = (r==0 ? 1 : r);
           A[i*ac + j] = r;
           AT[j*ar + i] = r; // FPGA takes right-hand side transposed so we transpose A
         }
@@ -112,15 +115,30 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
       }
 
 
-#if 1
+#if 0
       // DEBUG PRINTING :D
-      
+      printf("W:\n");
+      for (int i = 0; i < wr; ++i) {
+        for (int j = 0; j < wc; ++j) {
+          printf("%lld ", W[i*wc + j]);
+        }
+        printf("\n");
+      }
+      printf("A:\n");
+      for (int i = 0; i < ar; ++i) {
+        for (int j = 0; j < ac; ++j) {
+          printf("%lld ", A[i*ac + j]);
+        }
+        printf("\n");
+      }
       printf("\nPACKED W:\n");
       for (int i = 0; i < wpr * wpc * wpd; ++i)
         printf("%llu ", WP[i]);
       printf("\nPACKED AT:\n");
       for (int i = 0; i < apr * apc * apd; ++i)
         printf("%llu ", ATP[i]);
+#endif
+#if 0
       printf("\nSoftware result:\n");
       for (int i = 0; i < wr; ++i) {
         for (int j = 0; j < ac; ++j) {
@@ -151,16 +169,15 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
       t.set_res_addr((AccelDblReg) dram_r);
       t.set_res_byte_count(r_bytes);
 
-      printf("lhs_cols=%d\n", wpc);
       t.set_lhs_rows(wpr);
       t.set_lhs_cols(wpc);
       t.set_lhs_bits(wpd);
-      t.set_lhs_issigned(0);
+      t.set_lhs_issigned(lhs_issigned);
 
       t.set_rhs_rows(apr);
       t.set_rhs_cols(apc);
       t.set_rhs_bits(apd);
-      t.set_rhs_issigned(0);
+      t.set_rhs_issigned(rhs_issigned);
 
       t.set_start(1);
       while (t.get_done()!=1);
@@ -179,8 +196,8 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
           hw_result[i * out_cols + j] = r;
         }
       }
-#if 1
-      printf("\nHardware result:\n");
+#if 0
+      printf("Hardware result:\n");
       for (int i = 0; i < out_rows; ++i) {
         for (int j = 0; j < out_cols; ++j) {
           printf("%lld ", hw_result[i * out_cols + j]);
