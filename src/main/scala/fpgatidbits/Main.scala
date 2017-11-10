@@ -113,12 +113,10 @@ object MainObj {
     "TestBRAMMasked" -> {p => new TestBRAMMasked(p)},
     "TestMemLatency" -> {p => new TestMemLatency(p)},
     "TestGather" -> {p => new TestGather(p)},
-    "TestBMVM" -> {p => new TestBMVM(p, 64, 4)},
-    "TestDRAM" -> {p => new TestDRAM(p)},
     "TestSlidingWindow" -> {p => new TestSlidingWindow(p, 64)},
-    "TestSlidingWindowBitplanes" -> {p => new TestSlidingWindowBitplanes(p, 64)}
-    "TestBinaryGEMM" -> {p => new TestBinaryGEMM(p)}
-
+    "TestSlidingWindowBitplanes" -> {p => new TestSlidingWindowBitplanes(p, 64)},
+    "TestBinaryGEMM" -> {p => new TestBinaryGEMM(p)},
+    "TestConvolution" -> {p => new TestConvolution(p, 64)}
   )
 
   val platformMap: PlatformMap = Map(
