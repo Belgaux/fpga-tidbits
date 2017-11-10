@@ -73,24 +73,24 @@ object TidbitsMakeUtils {
   }
 
   def makeVerilator(accInst: AccelInstFxn, tidbitsDir: String,
-  destDir: String) = {
+    destDir: String) = {
 
-    val platformInst = {f => new VerilatedTesterWrapper(f)}
-    val chiselArgs = Array("--backend","v","--targetDir", "verilator")
-    // generate verilog for the accelerator
-    chiselMain(chiselArgs, () => Module(platformInst(accInst)))
-    val verilogBlackBoxFiles = Seq("Q_srl.v", "DualPortBRAM.v")
-    val scriptFiles = Seq("verilator-build.sh")
-    val driverFiles = Seq("wrapperregdriver.h", "platform-verilatedtester.cpp",
-      "platform.h", "verilatedtesterdriver.hpp")
+      val platformInst = {f => new VerilatedTesterWrapper(f)}
+      val chiselArgs = Array("--backend","v","--targetDir", "verilator")
+      // generate verilog for the accelerator
+      chiselMain(chiselArgs, () => Module(platformInst(accInst)))
+      val verilogBlackBoxFiles = Seq("Q_srl.v", "DualPortBRAM.v")
+      val scriptFiles = Seq("verilator-build.sh")
+      val driverFiles = Seq("wrapperregdriver.h", "platform-verilatedtester.cpp",
+        "platform.h", "verilatedtesterdriver.hpp")
 
-    // copy blackbox verilog, scripts, driver and SW support files
-    fileCopyBulk(s"$tidbitsDir/verilog/", destDir, verilogBlackBoxFiles)
-    fileCopyBulk(s"$tidbitsDir/script/", destDir, scriptFiles)
-    fileCopyBulk(s"$tidbitsDir/cpp/platform-wrapper-regdriver/", destDir,
-      driverFiles)
-    // build driver
-    platformInst(accInst).generateRegDriver(destDir)
+      // copy blackbox verilog, scripts, driver and SW support files
+      fileCopyBulk(s"$tidbitsDir/verilog/", destDir, verilogBlackBoxFiles)
+      fileCopyBulk(s"$tidbitsDir/script/", destDir, scriptFiles)
+      fileCopyBulk(s"$tidbitsDir/cpp/platform-wrapper-regdriver/", destDir,
+        driverFiles)
+      // build driver
+      platformInst(accInst).generateRegDriver(destDir)
   }
 }
 
@@ -118,6 +118,7 @@ object MainObj {
     "TestDRAM" -> {p => new TestDRAM(p)},
     "TestSlidingWindow" -> {p => new TestSlidingWindow(p, 64)},
     "TestSlidingWindowBitplanes" -> {p => new TestSlidingWindowBitplanes(p, 64)}
+    "TestConvolution" -> {p => new TestConvolution(p, 64)}
   )
 
   val platformMap: PlatformMap = Map(

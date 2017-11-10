@@ -1,6 +1,6 @@
 #!/bin/bash
 cd ..
-sbt "run e TestSlidingWindowBitplanes Tester"
-cd emu-TestSlidingWindowBitplanes/
+sbt "run e TestConvolution Tester"
+cd emu-TestConvolution/
 make
-./app && cd .. && cd emu-TestSlidingWindowBitplanes
+./app && cd .. && cd emu-TestConvolution
