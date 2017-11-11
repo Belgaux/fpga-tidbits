@@ -15,7 +15,7 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
   val wordSizeInBytes = wordSizeInBits/8
   val numMemPorts = 2
 
-  val io = new Bundle{
+  val io = new Bundle {
     val numCols = UInt(INPUT, width=16)
     val numRows = UInt(INPUT, width=16)
     val numBits = UInt(INPUT, width=16)
@@ -71,9 +71,14 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
     writer.start := Bool(false)
   }
 
+  when(writer.finished){
+    printf("Writer finished!\n")
+  }
+
   when(writerFinishedLastCycle){ // Make sure writer resets properly between writes
     timesWriterFinished := timesWriterFinished + UInt(1)
     writer.start := Bool(false)
+    printf("Writer reset\n")
   }
 
   val bram = Module(new DualPortBRAM(
@@ -162,6 +167,7 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
 
   switch (state){
     is(s_idle){
+      printf("Idle\n")
       when(io.start){
         state := s_fill_bram
         numBRAMRowsToFill := io.windowSize
@@ -186,6 +192,8 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
       bramWritePort.req.writeEn := reader.out.valid
       bramWritePort.req.writeData := reader.out.bits
 
+      printf("Reader on : %d, reader byteCount: %d\n", reader.start, reader.byteCount)
+      printf("Reader valid: %d, addr: %x\n", reader.out.valid, reader.baseAddr)
       when(reader.out.valid){ // Another word is transferred
         //printf("Writing %b to address %d in BRAM\n", bramWritePort.req.writeData, bramWritePort.req.addr)
         reader.start := Bool(false)
@@ -227,6 +235,7 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
     }
 
     is(s_fill_window_size_buffer){
+      printf("Filling window buffer\n")
       val remainMask = Reg(init=UInt(0, width=16))
       val lastCycleColBitInWord = Reg(init=UInt(0, width=16))
       val lastStride = Reg(init=UInt(0, width=16))
@@ -276,8 +285,9 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
       }
     }
 
-    is(s_write_buffer){ 
+    is(s_write_buffer){
       when(timesWriterFinished === writerWaitForNumFinished){
+        printf("Previous has finished\n")
         writer.baseAddr := io.addrResult + outputBitplaneSizeInBytes * currInputBitplane + outputRowSizeInBytes * currOutputRow + currInputChannel * (paddedWindowSizeSquaredSizeInBytes)
         writer.start := Bool(true)
         writer.byteCount := paddedWindowSizeSquaredSizeInBytes  // From bits to bytes
@@ -286,6 +296,7 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
         //printf("Sent in %b\n", temporaryBuffer >> currTempBufferOutputBit)
 
         when(writer.in.ready){ // Successfully queued chunk
+          printf("Queued into writer\n")
           //printf("Written word to address %x\n", io.addrResult + outputBitplaneSizeInBytes * currInputBitplane + outputRowSizeInBytes * currOutputRow + currInputChannel * (paddedWindowSizeSquaredSizeInBytes))
           when(currTempBufferOutputBit === paddedWindowSizeSquaredSizeInBits - UInt(wordSizeInBits)){ // Finished with whole temp buffer
             writerWaitForNumFinished := writerWaitForNumFinished + UInt(1)
@@ -354,6 +365,7 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
     }
 
     is(s_wait_for_writer_finish){
+      printf("Waiting for writer\n")
       writer.start := Bool(true)
       when(writer.finished){
         state := s_finished
@@ -361,7 +373,7 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
     }
 
     is(s_finished){
-
+      printf("Finished sliding window\n")
       io.finished := Bool(true)
       when(~io.start){
         state := s_idle
@@ -369,4 +381,3 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
     }
   }
 }
- 
