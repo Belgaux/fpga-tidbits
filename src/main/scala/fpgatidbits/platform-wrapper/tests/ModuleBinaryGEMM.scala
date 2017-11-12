@@ -109,6 +109,7 @@ class ModuleBinaryGEMM(p: PlatformWrapperParams, _wordSize: Int) extends Module 
   rhs_reader.start := Bool(false)
 
 
+
   def start_readers() = {
     lhs_reader.start := Bool(true)
     rhs_reader.start := Bool(true)  
@@ -123,6 +124,22 @@ class ModuleBinaryGEMM(p: PlatformWrapperParams, _wordSize: Int) extends Module 
   dot_queue.ready := Bool(false)
 
 
+  when(dot.din0.valid && dot.din0.ready){
+    printf("dot.din0: %b\n", dot.din0.bits)
+  }
+  /*when(sw.in.valid && sw.in.ready){
+    printf("Sent to writer: %b\n", sw.in.bits)
+    printf("resAddr: %x\n", io.res_addr)
+  }*/
+
+  when(lhs_reader.out.ready && lhs_reader.out.valid){
+    printf("Got from lhs reader: %b\n", lhs_reader.out.bits)
+  }
+
+  when(lhs_reader.start){
+    printf("Lhs started, address : %x, finished: %d\n", lhs_reader.baseAddr, lhs_reader.finished)
+  }
+  
   ///////// STATE MACHINE
 
   val s_idle :: s_inner :: s_inner_test :: s_inner_post :: s_rbit_test :: s_lbit_test :: s_row_lhs_test :: s_row_rhs_test :: s_wait :: s_done :: Nil = Enum(UInt(), 10)
@@ -148,6 +165,7 @@ class ModuleBinaryGEMM(p: PlatformWrapperParams, _wordSize: Int) extends Module 
     }
 
     is (s_inner) {
+      //start_readers()
       when (dot_queue.valid) {
         dot_queue.ready := Bool(true)
         acc_dot_row := acc_dot_row + dot_queue.bits
@@ -234,6 +252,7 @@ class ModuleBinaryGEMM(p: PlatformWrapperParams, _wordSize: Int) extends Module 
     is (s_wait) {
       // Wait for StreamWriter to finish writing to DRAM
       when (sw.finished) {
+        printf("Written all %d bytes\n", sw.byteCount)
         state := s_done
       }
     }
