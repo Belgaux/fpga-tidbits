@@ -67,10 +67,6 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   val lbit = Reg(init=UInt(0, width = 16))
   val rbit = Reg(init=UInt(0, width = 16))
 
-  // Index for result-matrix accumulators
-  val index = Reg(init=UInt(0))
-  index := row_rhs * io.lhs_rows + row_lhs
-
   // Accumulate result of all bitplanes for each row-pair
   val row_res = Reg(init=SInt(0, width=word_size))
   // Acuumulate AND-PCNT result within each bitplane row-pair
