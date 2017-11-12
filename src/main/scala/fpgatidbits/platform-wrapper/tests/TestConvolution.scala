@@ -94,8 +94,8 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
   val slidedWindowBitplaneSizeInWords = Reg(init=UInt(0, width=32))
   val slidedWindowTotalSizeInBytes = Reg(init=UInt(0, width=32))
 
-  val resultChannelSize = Reg(init=UInt(0, width=32))
-  val resultTotalSize = Reg(init=UInt(0, width=32))
+  val resultChannelSizeInBytes = Reg(init=UInt(0, width=32))
+  val resultTotalSizeInBytes = Reg(init=UInt(0, width=32))
 
   windowSizeSquared := io.windowSize * io.windowSize
   slidedWindowNumWidth := (io.imageWidth - io.windowSize)/io.stride + UInt(1)
@@ -106,13 +106,14 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
   slidedWindowBitplaneSizeInWords := slidedWindowRowSizeInWords * slidedWindowNumRowsInBitplane
   slidedWindowTotalSizeInBytes := (io.imageNumBits * slidedWindowBitplaneSizeInWords) << wordByteExponent
 
-  resultChannelSize := slidedWindowNumRowsInBitplane << wordByteExponent // Assume one word per output element
-  resultTotalSize := resultChannelSize * io.numOutputChannels
+  resultChannelSizeInBytes := slidedWindowNumRowsInBitplane << wordByteExponent // Assume one word per output element
+  resultTotalSizeInBytes := resultChannelSizeInBytes * io.numOutputChannels
 
   val s_idle :: s_running_sliding_window :: s_running_multiplication :: s_finished :: Nil = Enum(UInt(), 4)
   val state = Reg(init=s_idle)
 
   io.finished := Bool(false)
+  io.finishedWithSlidingWindow := Bool(false)
 
   val windowSlider = Module(new ModuleSlidingWindowBitplanes(p, wordSizeInBits)).io
 
@@ -131,16 +132,16 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
   multiplier.lhs_addr := io.filterAddr
   multiplier.rhs_addr := io.tempAddr
   multiplier.res_addr := io.outputAddr
-  multiplier.res_byte_count := resultTotalSize
+  multiplier.res_byte_count := resultTotalSizeInBytes
 
   multiplier.lhs_rows := io.numOutputChannels 
-  multiplier.lhs_cols := slidedWindowRowSizeInWords << wordBitExponent
+  multiplier.lhs_cols := slidedWindowRowSizeInWords
   multiplier.lhs_bits := io.filtersNumBits
   multiplier.lhs_issigned := Bool(true) // Is this ok?
 
   // Double check that rows is rows in memory, and not of the transposed of what's in memory
   multiplier.rhs_rows := slidedWindowNumRowsInBitplane
-  multiplier.rhs_cols := slidedWindowSizeInWords << wordBitExponent
+  multiplier.rhs_cols := slidedWindowRowSizeInWords
   multiplier.rhs_bits := io.imageNumBits
   multiplier.rhs_issigned := Bool(true) // Probably
 
@@ -200,13 +201,14 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
       // writer <> windowSlider.writerIF // But why??
 
       when(windowSlider.finished){
-        printf("Going to multiplication\n") 
+        io.finishedWithSlidingWindow := Bool(true)
         state := s_running_multiplication
       }
     }
 
-    is (s_running_multiplication) { // TODO: this section is (probably) the cause of a crash. Checkcheck
-      printf("In running multiplication\n");
+    is (s_running_multiplication) {
+
+      io.finishedWithSlidingWindow := Bool(true)
       multiplier.start := Bool(true)
 
       multiplier.readerIF1.out.bits := reader1.out.bits
@@ -246,6 +248,7 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
     }
 
     is (s_finished) {
+      io.finishedWithSlidingWindow := Bool(true)
       io.finished := Bool(true)
       when(~io.start){
         state := s_idle

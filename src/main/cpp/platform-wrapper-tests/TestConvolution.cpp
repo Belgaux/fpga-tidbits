@@ -42,14 +42,16 @@ void Run_TestConvolution(WrapperRegDriver* platform)
   const int word_size_in_bits = 64;
     
   const int num_input_channels = 2, num_output_channels = 2,
-    num_input_bitplanes = 3;
+    num_input_bitplanes = 4;
+    
+  const int image_width = 6, image_height = 6;
 
-  std::uniform_int_distribution<uint8_t> input_distribution(0, (1 << num_input_bitplanes) - 1);
-  
-  const int image_width = 3, image_height = 3;
+  const int window_size = 2, stride = 4;
+  const int num_filter_bitplanes = 4;
 
-  const int window_size = 2, stride = 1;
-  const int num_filter_bitplanes = 3;
+  // Obs, lower limit may need to be changed
+  std::uniform_int_distribution<int8_t> input_distribution(-(1 << (num_input_bitplanes - 1)), (1 << (num_input_bitplanes - 1)) - 1);
+  std::uniform_int_distribution<int8_t> filter_distribution(-(1 << (num_filter_bitplanes - 1)), (1 << (num_filter_bitplanes - 1)) - 1);
 
   if((image_width - window_size) % stride != 0){
     printf("Invalid combination of numCols, windowSize and stride\n");
@@ -68,7 +70,7 @@ void Run_TestConvolution(WrapperRegDriver* platform)
 
   const int image_size_in_bytes = image_width * image_height * num_input_channels;
   // Of the form channels/rows/columns/bitplanes
-  uint8_t image[image_size_in_bytes];
+  int8_t image[image_size_in_bytes];
 
   for(int i = 0; i < num_input_channels; i++){
     for(int j = 0; j < image_height; j++){
@@ -113,7 +115,6 @@ void Run_TestConvolution(WrapperRegDriver* platform)
 
   // Of form output_channels/input_channels/wrows/wcolumns
   int8_t filters[window_size * window_size * num_input_channels * num_output_channels];
-  std::uniform_int_distribution<uint8_t> filter_distribution(0, (1 << num_filter_bitplanes) - 1);
   
   for(int i = 0; i < num_output_channels; i++){
     for(int j = 0; j < num_input_channels; j++){
@@ -197,8 +198,8 @@ void Run_TestConvolution(WrapperRegDriver* platform)
   void* temp_buffer = platform->allocAccelBuffer(ws_size_in_bytes); // For output of sliding window
   
   platform->copyBufferHostToAccel(packed_image, dram_image, packed_image_size_in_bytes);
-  platform->copyBufferHostToAccel(packed_filters, dram_filters, packed_image_size_in_bytes);
-
+  platform->copyBufferHostToAccel(packed_filters, dram_filters, packed_filters_size_in_bytes);
+  
   t.set_imageAddr((AccelDblReg)dram_image);
   t.set_filterAddr((AccelDblReg)dram_filters);
   t.set_outputAddr((AccelDblReg)dram_result);
@@ -216,16 +217,17 @@ void Run_TestConvolution(WrapperRegDriver* platform)
 
   t.set_start(1);
 
-  printf("Packed image address: %x\n", dram_image);
-  while(!t.get_finished()) printf("Trying to check finished\n");
+  while(!t.get_finishedWithSlidingWindow());
+  printf("Finished sliding window\n");
+  
+  while(!t.get_finished());
 
   t.set_start(0);
   printf("Finished entire convolution!\n");
 
   int64_t accel_result[expected_result_num_elements];
   platform->copyBufferAccelToHost(dram_result, accel_result, expected_result_size_in_bytes);
-
-    
+  printf("Copied %d bytes\n", expected_result_size_in_bytes);
 #if 1
   printf("Image: \n");
   for(int i = 0; i < num_input_channels; i++){
@@ -242,7 +244,7 @@ void Run_TestConvolution(WrapperRegDriver* platform)
 #endif
 
 #if 0
-  printf("Packed image:\n");
+  printf("Packed image (LSB):\n");
   for(int i = 0; i < num_input_channels; i++){
     printf("Channel %d\n", i);
     for(int j = 0; j < num_input_bitplanes; j++){
@@ -280,8 +282,8 @@ void Run_TestConvolution(WrapperRegDriver* platform)
 #endif
 
 
-#if 0
-  printf("Packed filters: \n");
+#if 1
+  printf("Packed filters (LSB): \n");
   for(int i = 0; i < num_filter_bitplanes; i++){
     printf("Bitplane %d:\n", i);
     for(int j = 0; j < num_output_channels; j++){
@@ -290,11 +292,31 @@ void Run_TestConvolution(WrapperRegDriver* platform)
 	int currBit = 0;
 	for(int l = 0; l < packed_filters_channel_size_in_bytes; l++){
 	  print_lsb(packed_filters[i * packed_filters_bitplane_size_in_bytes +
-			 j * packed_filters_row_size_in_bytes +
-			 k * packed_filters_channel_size_in_bytes +
+				   j * packed_filters_row_size_in_bytes +
+				   k * packed_filters_channel_size_in_bytes +
 				   l]);
 	}
 	printf("    ");
+      }
+      printf("\n");
+    }
+    printf("\n");
+  }
+#endif
+
+  
+#if 1
+  uint8_t sliding_result[ws_size_in_bytes];
+  platform->copyBufferAccelToHost(temp_buffer, sliding_result, ws_size_in_bytes);
+  
+  printf("Result from sliding window:\n");
+  for(int i = 0; i < num_input_bitplanes; i++){
+    printf("Bitplane %d:\n", i);
+    for(int j = 0; j < expected_result_width * expected_result_height; j++){
+      for(int k = 0; k < ws_row_size_in_bytes; k++){
+	print_lsb(sliding_result[i * ws_row_size_in_bytes * expected_result_width * expected_result_height +
+				 j * ws_row_size_in_bytes +
+				 k]);
       }
       printf("\n");
     }
