@@ -41,12 +41,12 @@ void Run_TestConvolution(WrapperRegDriver* platform)
   const int word_size_in_bits = 64;
     
   const int num_input_channels = 5, num_output_channels = 3,
-    num_input_bitplanes = 5;
+    num_input_bitplanes = 3;
     
-  const int image_width = 31, image_height = 35;
+  const int image_width = 23, image_height = 27;
 
   const int window_size = 11, stride = 4;
-  const int num_filter_bitplanes = 5;
+  const int num_filter_bitplanes = 4;
 
   // Obs, lower limit may need to be changed
   std::uniform_int_distribution<int8_t> input_distribution(-(1 << (num_input_bitplanes - 1)), (1 << (num_input_bitplanes - 1)) - 1);
@@ -79,6 +79,9 @@ void Run_TestConvolution(WrapperRegDriver* platform)
     }
   }
 
+  //Debug:
+  image[0] = 0;
+  image[1] = -1;
 
   const int packed_image_row_size_in_bytes = ceilNum(image_width, word_size_in_bits) / 8,
     packed_image_size_per_bitplane = image_height * packed_image_row_size_in_bytes,
@@ -124,12 +127,15 @@ void Run_TestConvolution(WrapperRegDriver* platform)
     }
   }
 
+  // Debug:
+  filters[0] = -1;
+  //filters[1] = -1;
+
   
   const int packed_filters_channel_size_in_bytes = ceilNum(window_size * window_size, word_size_in_bits) / 8;
   const int packed_filters_row_size_in_bytes = packed_filters_channel_size_in_bytes * num_input_channels;
   const int packed_filters_bitplane_size_in_bytes = packed_filters_row_size_in_bytes * num_output_channels;
   const int packed_filters_size_in_bytes = packed_filters_bitplane_size_in_bytes * num_filter_bitplanes;
-  
   uint8_t packed_filters[packed_filters_size_in_bytes];
   memset(packed_filters, 0, packed_filters_size_in_bytes);
   for(int i = 0; i < num_filter_bitplanes; i++){
@@ -271,7 +277,7 @@ void Run_TestConvolution(WrapperRegDriver* platform)
 #endif
 
 
-#if 1
+#if 0
   printf("Filters: \n");
   for(int i = 0; i < num_output_channels; i++){
     printf("Output channel %d\n", i);
@@ -290,7 +296,7 @@ void Run_TestConvolution(WrapperRegDriver* platform)
 #endif
 
 
-#if 1
+#if 0
   printf("Packed filters (LSB): \n");
   for(int i = 0; i < num_filter_bitplanes; i++){
     printf("Bitplane %d:\n", i);

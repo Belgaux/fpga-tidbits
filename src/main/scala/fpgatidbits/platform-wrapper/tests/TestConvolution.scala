@@ -115,7 +115,7 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
   io.finished := Bool(false)
   io.finishedWithSlidingWindow := Bool(false)
 
-  val windowSlider = Module(new ModuleSlidingWindowBitplanes(p, wordSizeInBits)).io
+  val windowSlider = Module(new ModuleSlidingWindowBitplanesStateful(p, wordSizeInBits)).io
 
   windowSlider.numCols := io.imageWidth
   windowSlider.numRows := io.imageHeight
