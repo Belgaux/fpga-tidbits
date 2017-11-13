@@ -16,10 +16,10 @@ typedef uint64_t u64;
 typedef int32_t s32;
 typedef int64_t s64;
 
-#include "TestBinaryGEMM.hpp"
-void Run_TestBinaryGEMM(WrapperRegDriver* platform) 
+#include "TestBitserialGEMM.hpp"
+void Run_TestBitserialGEMM(WrapperRegDriver* platform) 
 {
-  TestBinaryGEMM t(platform);
+  TestBitserialGEMM t(platform);
  
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
   std::mt19937_64 generator (seed);
@@ -40,7 +40,7 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
       s64 W[wr*wc];
 
       int ar = wc;
-      int ac = rr;
+      int ac = 1;
       int ad = 2;
 
       int out_rows = wr;
@@ -48,6 +48,7 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
 
       int lhs_issigned = 1;
       int rhs_issigned = 1;
+      int num_chn = 1;
       
       /////////// W
       for (int i = 0; i < wr; ++i) {
@@ -138,7 +139,7 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
       for (int i = 0; i < apr * apc * apd; ++i)
         printf("%llu ", ATP[i]);
 #endif
-#if 0
+#if 1
       printf("\nSoftware result:\n");
       for (int i = 0; i < wr; ++i) {
         for (int j = 0; j < ac; ++j) {
@@ -179,6 +180,8 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
       t.set_rhs_bits(apd);
       t.set_rhs_issigned(rhs_issigned);
 
+      t.set_num_chn(num_chn);
+
       t.set_start(1);
       while (t.get_done()!=1);
 
@@ -196,7 +199,7 @@ void Run_TestBinaryGEMM(WrapperRegDriver* platform)
           hw_result[i * out_cols + j] = r;
         }
       }
-#if 0
+#if 1
       printf("Hardware result:\n");
       for (int i = 0; i < out_rows; ++i) {
         for (int j = 0; j < out_cols; ++j) {
@@ -226,7 +229,7 @@ int main()
 {
   WrapperRegDriver * platform = initPlatform();
 
-  Run_TestBinaryGEMM(platform);
+  Run_TestBitserialGEMM(platform);
 
   deinitPlatform(platform);
   return 0;

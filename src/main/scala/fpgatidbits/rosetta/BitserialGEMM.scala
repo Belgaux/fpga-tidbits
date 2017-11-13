@@ -1,28 +1,27 @@
 package fpgatidbits.Testbenches
 
 import Chisel._
-import fpgatidbits.PlatformWrapper._
 import fpgatidbits.dma._
 import fpgatidbits.ocm._
 import fpgatidbits.rosetta._
+import fpgatidbits.PlatformWrapper._
 
+// Bitserial General Matrix Multiplication 
 // Right-hand side must be given transposed
+// Result is also produced transposed
 
-class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
+class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
 
-  val word_size = 64
   val output_queue_size = 8
   val input_queue_size = 8
   val bytes_per_elem = UInt(word_size/8, width=8)
 
-  // This has to be camel-case for some reason??
-  val numMemPorts = 3
-
-  val io = new GenericAcceleratorIF(numMemPorts, p) {
+  val io = new Bundle {
     val lhs_addr = UInt(INPUT, width = 64)
     val rhs_addr = UInt(INPUT, width = 64)
     val res_addr = UInt(INPUT, width = 64)
     val res_byte_count = UInt(INPUT, width = 32)
+    val num_chn = UInt(INPUT, width = 16)
 
     val lhs_rows = UInt(INPUT, width = 16)
     val lhs_cols = UInt(INPUT, width = 16)
@@ -36,25 +35,14 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
     val start = Bool(INPUT)
     val done = Bool(OUTPUT)
-  }
 
-  def make_reader(port: Int, baseAddr : UInt, byteCount : UInt, start:Bool) = {
-    val sr = Module(new StreamReader(new StreamReaderParams(
-      streamWidth = word_size, fifoElems = 8, mem = p.toMemReqParams(),
-      maxBeats = 1, chanID = 0, disableThrottle = true
-    ))).io
-    sr.start := start
-    sr.baseAddr := baseAddr
-    sr.byteCount := byteCount
-    sr.req <> io.memPort(port).memRdReq
-    sr.rsp <> io.memPort(port).memRdRsp
-    plugMemWritePort(port)
-    sr
+    val lhs_reader = new StreamReaderIF(word_size, p.toMemReqParams).flip
+    val rhs_reader = new StreamReaderIF(word_size, p.toMemReqParams).flip
+    val writer     = new StreamWriterIF(word_size, p.toMemReqParams).flip
   }
-
 
   //////// REGISTERS
-  
+
   val write_index = Reg(init=UInt(0, width=32))
   val num_words = Reg(init=UInt(0, width = 32))
 
@@ -66,6 +54,8 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   // Bit-plane counters
   val lbit = Reg(init=UInt(0, width = 16))
   val rbit = Reg(init=UInt(0, width = 16))
+
+  val chn = Reg(init=UInt(0, width = 16))
 
   // Accumulate result of all bitplanes for each row-pair
   val row_res = Reg(init=SInt(0, width=word_size))
@@ -90,6 +80,12 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   val lhs_bitplane_stride        = Reg(init=UInt(0))
   val rhs_bitplane_stride        = Reg(init=UInt(0))
 
+  val lhs_bytes_per_channel     = Reg(init=UInt(0))
+  val rhs_bytes_per_channel     = Reg(init=UInt(0))
+
+  val lhs_channel_stride        = Reg(init=UInt(0))
+  val rhs_channel_stride        = Reg(init=UInt(0))
+
 
   /////// WIRES
 
@@ -99,53 +95,48 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   val neg_rhs = Bool()
   neg_lhs := io.lhs_issigned && (lbit === (io.lhs_bits - UInt(1)))
   neg_rhs := io.rhs_issigned && (rbit === (io.rhs_bits - UInt(1)))
-
   io.done := Bool(false)
+
 
   //////// OUTPUT
  
-  val sw = Module(new StreamWriter(new StreamWriterParams(
-    streamWidth = p.memDataBits, mem = p.toMemReqParams(), chanID = 0
-  ))).io
-  sw.baseAddr := io.res_addr
-  sw.byteCount := io.res_byte_count
-  sw.start := io.start
-  sw.req <> io.memPort(2).memWrReq
-  sw.wdat <> io.memPort(2).memWrDat
-  sw.rsp <> io.memPort(2).memWrRsp
-  plugMemReadPort(2)
+  io.writer.baseAddr := io.res_addr
+  io.writer.byteCount := io.res_byte_count
+  io.writer.start := io.start
 
   val out_queue = Decoupled(SInt(width=word_size))
   out_queue.valid := Bool(false)
   out_queue.bits := UInt(666) // debug value, should never happen
-  sw.in <> FPGAQueue(out_queue, output_queue_size)
+  io.writer.in <> FPGAQueue(out_queue, output_queue_size)
 
 
   ///////// INPUT
 
-  val lhs_reader = make_reader(port=0, baseAddr=lhs_base_addr,
-    byteCount=bytes_per_row, start=Bool(false))
-
-  val rhs_reader = make_reader(port=1, baseAddr=rhs_base_addr,
-    byteCount=bytes_per_row, start=Bool(false))
+  io.lhs_reader.baseAddr := lhs_base_addr
+  io.lhs_reader.byteCount := bytes_per_row
+  io.lhs_reader.start := Bool(false)
+  io.rhs_reader.baseAddr := rhs_base_addr
+  io.rhs_reader.byteCount := bytes_per_row
+  io.rhs_reader.start := Bool(false)
 
   def start_readers() = {
-    lhs_reader.start := Bool(true)
-    rhs_reader.start := Bool(true)  
+    io.lhs_reader.start := Bool(true)
+    io.rhs_reader.start := Bool(true)  
   }
+
 
   ///////// PROCESSING ELEMENT
 
   val dot = Module(new DotProduct(word_size)).io
-  dot.din0 <> FPGAQueue(lhs_reader.out, input_queue_size)
-  dot.din1 <> FPGAQueue(rhs_reader.out, input_queue_size)
+  dot.din0 <> FPGAQueue(io.lhs_reader.out, input_queue_size)
+  dot.din1 <> FPGAQueue(io.rhs_reader.out, input_queue_size)
   val dot_queue = FPGAQueue(dot.dout, input_queue_size)
   dot_queue.ready := Bool(false)
 
 
   ///////// STATE MACHINE
 
-  val s_idle :: s_prep_reader_static0 :: s_prep_reader_static1 :: s_prep_reader_dynamic0 :: s_prep_reader_dynamic1 :: s_prep_reader_dynamic2 :: s_start_readers :: s_inner :: s_inner_test :: s_inner_post :: s_rbit_test :: s_lbit_test :: s_row_lhs_test :: s_row_rhs_test :: s_wait :: s_done :: Nil = Enum(UInt(), 16)
+  val s_idle :: s_prep_reader_static0 :: s_prep_reader_static1 :: s_prep_reader_static2 :: s_prep_reader_dynamic0 :: s_prep_reader_dynamic1 :: s_prep_reader_dynamic2 :: s_prep_reader_dynamic3 :: s_start_readers :: s_inner :: s_inner_test :: s_inner_post :: s_rbit_test :: s_lbit_test :: s_row_lhs_test :: s_row_rhs_test :: s_chn_test :: s_wait :: s_done :: Nil = Enum(UInt(), 19)
   val state = Reg(init=UInt(s_idle))
 
   switch (state) {
@@ -176,14 +167,22 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     is (s_prep_reader_static1) {
       lhs_bytes_per_bitplane := lhs_bytes_per_bitplane_tmp * io.lhs_cols
       rhs_bytes_per_bitplane := rhs_bytes_per_bitplane_tmp * io.rhs_cols
-      state := s_prep_reader_dynamic0
+      state := s_prep_reader_static2
     }
-    
+ 
+    is (s_prep_reader_static2) {
+      lhs_bytes_per_channel := lhs_bytes_per_bitplane * io.lhs_bits
+      rhs_bytes_per_channel := rhs_bytes_per_bitplane * io.rhs_bits
+      state := s_prep_reader_dynamic0
+    }   
+
     is (s_prep_reader_dynamic0) {
       lhs_row_stride      := row_lhs * bytes_per_row 
       rhs_row_stride      := row_rhs * bytes_per_row 
       lhs_bitplane_stride := lbit * lhs_bytes_per_bitplane
       rhs_bitplane_stride := rbit * rhs_bytes_per_bitplane
+      lhs_channel_stride  := chn * lhs_bytes_per_channel
+      rhs_channel_stride  := chn * rhs_bytes_per_channel
       state := s_prep_reader_dynamic1
     }
    
@@ -196,6 +195,12 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     is (s_prep_reader_dynamic2) {
       lhs_base_addr := lhs_base_addr + lhs_bitplane_stride
       rhs_base_addr := rhs_base_addr + rhs_bitplane_stride
+      state := s_prep_reader_dynamic3
+    }
+
+    is (s_prep_reader_dynamic3) {
+      lhs_base_addr := lhs_base_addr + lhs_channel_stride
+      rhs_base_addr := rhs_base_addr + rhs_channel_stride
       state := s_start_readers
     }
 
@@ -277,6 +282,17 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     is (s_row_rhs_test) {
       when (row_rhs === io.rhs_rows) {
         row_rhs := UInt(0)
+        chn := chn + UInt(1)
+        state := s_chn_test
+      }
+      .otherwise {
+        state := s_prep_reader_dynamic0
+      }
+    }
+
+    is (s_chn_test) {
+      when (chn === io.num_chn) {
+        chn := UInt(0)
         state := s_wait
       }
       .otherwise {
@@ -285,8 +301,7 @@ class TestBinaryGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     }
 
     is (s_wait) {
-      // Wait for StreamWriter to finish writing to DRAM
-      when (sw.finished) {
+      when (io.writer.finished) {
         state := s_done
       }
     }
