@@ -124,21 +124,24 @@ class ModuleBinaryGEMM(p: PlatformWrapperParams, _wordSize: Int) extends Module 
   dot_queue.ready := Bool(false)
 
 
-  when(dot.din0.valid && dot.din0.ready){
+  /*when(dot.din0.valid && dot.din0.ready){
     printf("dot.din0: %b\n", dot.din0.bits)
   }
-  /*when(sw.in.valid && sw.in.ready){
+  when(dot.din1.valid && dot.din1.ready){
+    printf("dot.din1: %b\n", dot.din1.bits)
+  }
+  when(sw.in.valid && sw.in.ready){
     printf("Sent to writer: %b\n", sw.in.bits)
     printf("resAddr: %x\n", io.res_addr)
   }*/
 
-  when(lhs_reader.out.ready && lhs_reader.out.valid){
+  /*when(lhs_reader.out.ready && lhs_reader.out.valid){
     printf("Got from lhs reader: %b\n", lhs_reader.out.bits)
-  }
+  }*/
 
-  when(lhs_reader.start){
+  /*when(lhs_reader.start){
     printf("Lhs started, address : %x, finished: %d\n", lhs_reader.baseAddr, lhs_reader.finished)
-  }
+  }*/
   
   ///////// STATE MACHINE
 

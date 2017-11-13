@@ -279,7 +279,7 @@ class ModuleSlidingWindowBitplanes(p: PlatformWrapperParams, _wordSizeInBits:Int
         writer.in.bits := temporaryBuffer >> currTempBufferOutputBit
 
         when(writer.in.ready){ // Successfully queued chunk
-          printf("Queued chunk %d\n", timesWriterFinished)
+          //printf("Queued chunk %d\n", timesWriterFinished)
           when(currTempBufferOutputBit === paddedWindowSizeSquaredSizeInBits - UInt(wordSizeInBits)){ // Finished with whole temp buffer
             writerWaitForNumFinished := writerWaitForNumFinished + UInt(1)
             currTempBufferOutputBit := UInt(0)
