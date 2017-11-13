@@ -18,7 +18,6 @@ class TestBitserialGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) 
     val lhs_addr = UInt(INPUT, width = 64)
     val rhs_addr = UInt(INPUT, width = 64)
     val res_addr = UInt(INPUT, width = 64)
-    val res_byte_count = UInt(INPUT, width = 32)
 
     val lhs_rows = UInt(INPUT, width = 16)
     val lhs_cols = UInt(INPUT, width = 16)
@@ -43,7 +42,6 @@ class TestBitserialGEMM(p: PlatformWrapperParams) extends GenericAccelerator(p) 
   gemm.lhs_addr := io.lhs_addr
   gemm.rhs_addr := io.rhs_addr
   gemm.res_addr := io.res_addr
-  gemm.res_byte_count := io.res_byte_count
   gemm.num_chn := io.num_chn
 
   gemm.lhs_rows := io.lhs_rows

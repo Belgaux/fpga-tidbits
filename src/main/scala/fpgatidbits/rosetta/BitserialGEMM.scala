@@ -20,7 +20,6 @@ class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
     val lhs_addr = UInt(INPUT, width = 64)
     val rhs_addr = UInt(INPUT, width = 64)
     val res_addr = UInt(INPUT, width = 64)
-    val res_byte_count = UInt(INPUT, width = 32)
     val num_chn = UInt(INPUT, width = 16)
 
     val lhs_rows = UInt(INPUT, width = 16)
@@ -86,6 +85,9 @@ class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
   val lhs_channel_stride        = Reg(init=UInt(0))
   val rhs_channel_stride        = Reg(init=UInt(0))
 
+  val res_byte_count = Reg(init=UInt(0, width=32))
+  val start_writer = Reg(init=UInt(0, width=1))
+
 
   /////// WIRES
 
@@ -97,12 +99,11 @@ class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
   neg_rhs := io.rhs_issigned && (rbit === (io.rhs_bits - UInt(1)))
   io.done := Bool(false)
 
-
   //////// OUTPUT
  
   io.writer.baseAddr := io.res_addr
-  io.writer.byteCount := io.res_byte_count
-  io.writer.start := io.start
+  io.writer.byteCount := res_byte_count
+  io.writer.start := start_writer
 
   val out_queue = Decoupled(SInt(width=word_size))
   out_queue.valid := Bool(false)
@@ -161,20 +162,23 @@ class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
       bytes_per_row              := bytes_per_elem * io.lhs_cols
       lhs_bytes_per_bitplane_tmp := bytes_per_elem * io.lhs_rows
       rhs_bytes_per_bitplane_tmp := bytes_per_elem * io.rhs_rows
+      res_byte_count             := bytes_per_elem * io.lhs_rows
       state := s_prep_reader_static1
     }
 
     is (s_prep_reader_static1) {
       lhs_bytes_per_bitplane := lhs_bytes_per_bitplane_tmp * io.lhs_cols
       rhs_bytes_per_bitplane := rhs_bytes_per_bitplane_tmp * io.rhs_cols
+      res_byte_count         := res_byte_count * io.rhs_rows
       state := s_prep_reader_static2
     }
  
     is (s_prep_reader_static2) {
       lhs_bytes_per_channel := lhs_bytes_per_bitplane * io.lhs_bits
       rhs_bytes_per_channel := rhs_bytes_per_bitplane * io.rhs_bits
+      res_byte_count        := res_byte_count * io.num_chn
       state := s_prep_reader_dynamic0
-    }   
+    }
 
     is (s_prep_reader_dynamic0) {
       lhs_row_stride      := row_lhs * bytes_per_row 
@@ -206,6 +210,7 @@ class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
 
     is (s_start_readers) {
       start_readers()
+      start_writer := UInt(1)
       state := s_inner
     }
 
@@ -302,6 +307,7 @@ class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
 
     is (s_wait) {
       when (io.writer.finished) {
+        start_writer := UInt(0)
         state := s_done
       }
     }
