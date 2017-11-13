@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <cstdint>
 #include <chrono>
@@ -41,13 +40,13 @@ void Run_TestConvolution(WrapperRegDriver* platform)
 
   const int word_size_in_bits = 64;
     
-  const int num_input_channels = 2, num_output_channels = 2,
-    num_input_bitplanes = 4;
+  const int num_input_channels = 5, num_output_channels = 3,
+    num_input_bitplanes = 5;
     
-  const int image_width = 6, image_height = 6;
+  const int image_width = 31, image_height = 35;
 
-  const int window_size = 2, stride = 4;
-  const int num_filter_bitplanes = 4;
+  const int window_size = 11, stride = 4;
+  const int num_filter_bitplanes = 5;
 
   // Obs, lower limit may need to be changed
   std::uniform_int_distribution<int8_t> input_distribution(-(1 << (num_input_bitplanes - 1)), (1 << (num_input_bitplanes - 1)) - 1);
@@ -185,7 +184,6 @@ void Run_TestConvolution(WrapperRegDriver* platform)
     }
   }
 
-
   // For the window-slided image:
   const int ws_window_size_in_bytes = ceilNum(window_size * window_size, word_size_in_bits) / 8;
   const int ws_row_size_in_bytes = ws_window_size_in_bytes * num_input_channels;
@@ -228,6 +226,16 @@ void Run_TestConvolution(WrapperRegDriver* platform)
   int64_t accel_result[expected_result_num_elements];
   platform->copyBufferAccelToHost(dram_result, accel_result, expected_result_size_in_bytes);
   printf("Copied %d bytes\n", expected_result_size_in_bytes);
+
+  int64_t transposed_accel_result[expected_result_num_elements];
+  for(int c = 0; c < num_output_channels; c++){
+    for(int j = 0; j < expected_result_width * expected_result_height; j++){
+      transposed_accel_result[c * expected_result_width * expected_result_height
+			      + j] =
+	accel_result[j * num_output_channels + c];
+    }
+  }
+  
 #if 1
   printf("Image: \n");
   for(int i = 0; i < num_input_channels; i++){
@@ -341,7 +349,7 @@ void Run_TestConvolution(WrapperRegDriver* platform)
   printf("\n");
 #endif
 
-#if 1
+#if 0
   printf("Accel result: \n");
   for(int c = 0; c < num_output_channels; c++){
     printf("Channel %d:\n", c);
@@ -357,9 +365,26 @@ void Run_TestConvolution(WrapperRegDriver* platform)
   printf("\n");
 #endif
 
+#if 1
+  printf("Transposed accel result: \n");
+  printf("Accel result: \n");
+  for(int c = 0; c < num_output_channels; c++){
+    printf("Channel %d:\n", c);
+    for(int i = 0; i < expected_result_height; i++){
+      for(int j = 0; j < expected_result_width; j++){
+	printf("%lld   ", transposed_accel_result[c * expected_result_height * expected_result_width +
+					i * expected_result_width + j]);
+      }
+      printf("\n");
+    }
+    printf("\n");
+  }
+  printf("\n");
+#endif
+
   bool equal = true;
   for(int i = 0; i < expected_result_num_elements; i++){
-    if(accel_result[i] != expected_result[i]){
+    if(transposed_accel_result[i] != expected_result[i]){
       printf("Element number %d was different\n", i);
       equal = false;
       break;
