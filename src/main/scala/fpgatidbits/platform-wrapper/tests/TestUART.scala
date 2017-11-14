@@ -7,37 +7,48 @@
  * 
  */
 
-package uart
+package fpgatidbits.Testbenches
 
 import Chisel._
 
-/**
- * This is a minimal AXI style data plus handshake channel.
- */
-class Channel extends Bundle {
-  val data = Bits(INPUT, 8)
-  val ready = Bool(OUTPUT)
-  val valid = Bool(INPUT)
-}
+import fpgatidbits.dma._
+import fpgatidbits.streams._
+import fpgatidbits.PlatformWrapper._
+import fpgatidbits.rosetta._
+/*package fpgatidbits.Testbenches
 
+import Chisel._
+
+import fpgatidbits.PlatformWrapper._
+import fpgatidbits.rosetta._
+*/
 /**
  * Transmit part of the UART.
  * A minimal version without any additional buffering.
  * Use an AXI like valid/ready handshake.
  */
-class Tx(frequency: Int, baudRate: Int) extends Module {
-  val io = new Bundle {
+class TestUART(p: PlatformWrapperParams, frequency: Int, baudRate: Int) extends GenericAccelerator(p) {
+  val numMemPorts = 1
+  val io = new GenericAcceleratorIF(numMemPorts, p) {
     val txd = Bits(OUTPUT, 1)
-    val channel = new Channel()
+    val data = Bits(INPUT, 8)
+    val ready = Bool(OUTPUT)
+    val valid = Bool(INPUT)
+    val debugOutput = UInt(OUTPUT, width = 64)    
+    // oscar sier i fra naar data er klar
+    val oscar = Bool(OUTPUT)
+    
   }
-
+  val debugReg = Reg(init = UInt(0, width=64))
+  io.oscar := Bool(false)
   val BIT_CNT = UInt((frequency + baudRate / 2) / baudRate - 1)
-
+  //printf("I am global\n") 
   val shiftReg = Reg(init = Bits(0x3f))
   val cntReg = Reg(init = UInt(0, 20))
   val bitsReg = Reg(init = UInt(0, 4))
 
-  io.channel.ready := (cntReg === UInt(0)) && (bitsReg === UInt(0))
+  io.debugOutput := shiftReg
+  io.ready := (cntReg === UInt(0)) && (bitsReg === UInt(0))
   io.txd := shiftReg(0)
 
   // TODO: make the counter a tick generator
@@ -49,11 +60,15 @@ class Tx(frequency: Int, baudRate: Int) extends Module {
       shiftReg := Cat(Bits(1), shift(9, 0))
       bitsReg := bitsReg - UInt(1)
     }.otherwise {
-      when(io.channel.valid) {
+      when(io.valid) {
         shiftReg(0) := Bits(0) // start bit
-        shiftReg(8, 1) := io.channel.data // data
+        shiftReg(8, 1) := io.data // data
         shiftReg(10, 9) := Bits(3) // two stop bits
+        printf("Bits %d \n", Bits(0))
+        printf("io.data %d \n", io.data)
+        printf("bits(3) %d \n", Bits(3))
         bitsReg := UInt(11)
+        io.oscar := Bool(true)
       }.otherwise {
         shiftReg := Bits(0x3f)
       }
@@ -61,167 +76,6 @@ class Tx(frequency: Int, baudRate: Int) extends Module {
 
   }.otherwise {
     cntReg := cntReg - UInt(1)
-  }
-
-  debug(shiftReg)
-}
-
-/**
- * Receive part of the UART.
- * A minimal version without any additional buffering.
- * Use an AXI like valid/ready handshake.
- *
- * The following code is inspired by Tommy's receive code at:
- * https://github.com/tommythorn/yarvi
- */
-class Rx(frequency: Int, baudRate: Int) extends Module {
-  val io = new Bundle {
-    val rxd = Bits(INPUT, 1)
-    val channel = new Channel().flip
-  }
-
-  val BIT_CNT = UInt((frequency + baudRate / 2) / baudRate - 1)
-  val START_CNT = UInt((3 * frequency / 2 + baudRate / 2) / baudRate - 1)
-
-  // Sync in the asynchronous RX data
-  val rxReg = Reg(next = Reg(next = io.rxd))
-
-  val shiftReg = Reg(init = Bits(0, 8))
-  val cntReg = Reg(init = UInt(0, 20))
-  val bitsReg = Reg(init = UInt(0, 4))
-  val valReg = Reg(init = Bool(false))
-
-  when(cntReg =/= UInt(0)) {
-    cntReg := cntReg - UInt(1)
-  }.elsewhen(bitsReg =/= UInt(0)) {
-    cntReg := BIT_CNT
-    shiftReg := Cat(rxReg, shiftReg >> 1)
-    bitsReg := bitsReg - UInt(1)
-    // the last shifted in
-    when(bitsReg === UInt(1)) {
-      valReg := Bool(true)
-    }
-  }.elsewhen(rxReg === UInt(0)) { // wait 1.5 bits after falling edge of start
-    cntReg := START_CNT
-    bitsReg := UInt(8)
-  }
-
-  when(io.channel.ready) {
-    valReg := Bool(false)
-  }
-
-  io.channel.data := shiftReg
-  io.channel.valid := valReg
-}
-
-/**
- * A single byte buffer with an AXI style channel
- */
-class Buffer extends Module {
-  val io = new Bundle {
-    val in = new Channel()
-    val out = new Channel().flip
-  }
-
-  val empty :: full :: Nil = Enum(UInt(), 2)
-  val stateReg = Reg(init = empty)
-  val dataReg = Reg(init = Bits(0, 8))
-
-  io.in.ready := stateReg === empty
-  io.out.valid := stateReg === full
-
-  when(stateReg === empty) {
-    when(io.in.valid) {
-      dataReg := io.in.data
-      stateReg := full
-    }
-  }.otherwise { // full, io.out.valid := true
-    when(io.out.ready) {
-      stateReg := empty
-    }
-  }
-  io.out.data := dataReg
-}
-
-/**
- * A transmitter with a single buffer.
- */
-class BufferedTx(frequency: Int, baudRate: Int) extends Module {
-  val io = new Bundle {
-    val txd = Bits(OUTPUT, 1)
-    val channel = new Channel()
-  }
-  val tx = Module(new Tx(frequency, baudRate))
-  val buf = Module(new Buffer())
-
-  buf.io.in <> io.channel
-  tx.io.channel <> buf.io.out
-  io.txd <> tx.io.txd
-}
-
-/**
- * Send 'hello'.
- */
-class Sender(frequency: Int, baudRate: Int) extends Module {
-  val io = new Bundle {
-    val txd = Bits(OUTPUT, 1)
-  }
-
-  val tx = Module(new BufferedTx(frequency, baudRate))
-
-  io.txd := tx.io.txd
-
-  // This is not super elegant
-  val hello = Array[Bits](Bits('H'), Bits('e'), Bits('l'), Bits('l'), Bits('o'))
-  val text = Vec[Bits](hello)
-
-  val cntReg = Reg(init = UInt(0, 3))
-
-  tx.io.channel.data := text(cntReg)
-  tx.io.channel.valid := cntReg =/= UInt(5)
-
-  when(tx.io.channel.ready && cntReg =/= UInt(5)) {
-    cntReg := cntReg + UInt(1)
-  }
-}
-
-object SenderMain {
-  def main(args: Array[String]): Unit = {
-    chiselMain(Array[String]("--backend", "v", "--targetDir", "generated"),
-      () => Module(new Sender(50000000, 115200)))
-  }
-}
-
-class UartMain(frequency: Int, baudRate: Int) extends Module {
-  val io = new Bundle {
-    val rxd = Bits(INPUT, 1)
-    val txd = Bits(OUTPUT, 1)
-  }
-  
-  val u = Module(new Sender(50000000, 115200))
-  io.txd := u.io.txd
-}
-
-object UartMain {
-  def main(args: Array[String]): Unit = {
-    chiselMain(Array[String]("--backend", "v", "--targetDir", "generated"),
-      () => Module(new UartMain(50000000, 115200)))
-  }
-}
-
-// TODO: use receiver and transmitter
-class Echo extends Module {
-  val io = new Bundle {
-    val txd = Bits(OUTPUT, 1)
-    val rxd = Bits(INPUT, 1)
-  }
-
-  io.txd := io.rxd
-}
-
-object EchoMain {
-  def main(args: Array[String]): Unit = {
-    chiselMain(Array("--backend", "v", "--targetDir", "generated"),
-      () => Module(new Echo()))
+    //printf("cntReg %d \n", cntReg)
   }
 }

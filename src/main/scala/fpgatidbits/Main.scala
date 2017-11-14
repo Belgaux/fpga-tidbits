@@ -116,8 +116,7 @@ object MainObj {
     "TestBMVM" -> {p => new TestBMVM(p, 64, 4)},
     "TestDRAM" -> {p => new TestDRAM(p)},
     "TestSlidingWindow" -> {p => new TestSlidingWindow(p, 64)},
-    "TestSlidingWindowBitplanes" -> {p => new TestSlidingWindowBitplanes(p, 64),
-    "TestUART" -> {p => new TestUART(5000000, 115200)}}
+    "TestUART" -> {p => new TestUART(p, 5000000, 9600)}
   )
 
   val platformMap: PlatformMap = Map(
