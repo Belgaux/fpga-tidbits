@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <random>
+#include <time.h>
 
 using namespace std;
 #include "platform.h"
@@ -23,38 +24,42 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
  
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
   std::mt19937_64 generator (seed);
-  std::uniform_int_distribution<s64> distribution(-1, 1); 
+  std::uniform_int_distribution<s64> distribution(1, 1); 
 
 
   // loops for testing lots of matrices
-  for (int rr = 1; rr < 4; ++rr) {
-    for (int cc = 1; cc < 32; ++cc) {
+  for (int rr = 1; rr < 2; ++rr) {
+    for (int cc = 1; cc < 2; ++cc) {
 
     ////////////// GENERATING TEST MATRICES //////////
 
       int word_size = 64;
       
-      int wr = rr;
-      int wc = cc*64;
-      int wd = 2;
+      int wr = 4;
+      int wc = 4;
+      int wd = 1;
       s64 W[wr*wc];
 
       int ar = wc;
-      int ac = rr;
-      int ad = 2;
+      int ac = 2;
+      int ad = 1;
+
+      printf("\nMatrix dim: W=(%d, %d) A=(%d, %d)\n", wr, wc, ar, ac);
+      printf("\nBit depths: %d, %d\n", wd, ad);
 
       int out_rows = wr;
       int out_cols = ac;
 
-      int lhs_issigned = 1;
-      int rhs_issigned = 1;
-      int num_chn = 1;
+      int lhs_issigned = 0;
+      int rhs_issigned = 0;
+      int num_chn = 3;
+      int out_len = num_chn * out_rows * out_cols;
       
       /////////// W
       for (int i = 0; i < wr; ++i) {
         for (int j = 0; j < wc; ++j) {
           s64 r = distribution(generator);
-          r = (r == 0 ? -1 : r);
+          //r = (r == 0 ? -1 : r);
           W[i*wc + j] = r;
         }
       }
@@ -63,7 +68,10 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
       int wpr = wr;
       int wpc = ((wc+(word_size-1))/word_size);
       int wpd = wd;
-      u64 WP[wpr*wpc*wpd] = {0};
+      int WP_len = wpr * wpc * wpd * num_chn;
+      u64 WP[WP_len] = {0};
+      for (int i = 0; i < WP_len; ++i)
+        WP[i] = 2;
       for (int d = 0; d < wd; ++d) {
         for (int i = 0; i < wr; ++i) {
           for (int j = 0; j < wc; ++j) {
@@ -81,7 +89,7 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
       for (int i = 0; i < ar; ++i) {
         for (int j = 0; j < ac; ++j) {
           s64 r = distribution(generator);
-          r = (r==0 ? 1 : r);
+          //r = (r==0 ? 1 : r);
           A[i*ac + j] = r;
           AT[j*ar + i] = r; // FPGA takes right-hand side transposed so we transpose A
         }
@@ -91,7 +99,10 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
       int apr = ac;
       int apc = ((ar+(word_size-1))/word_size);
       int apd = ad;
-      u64 ATP[apr*apc*apd] = {0};
+      int ATP_len = apr * apc * apd * num_chn;
+      u64 ATP[ATP_len] = {0};
+      for (int i = 0; i < ATP_len; ++i)
+        ATP[i] = 1;
       for (int d = 0; d < ad; ++d) {
         for (int i = 0; i < ac; ++i) {
           for (int j = 0; j < ar; ++j) {
@@ -104,6 +115,7 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
       }
         
       // Matrix multiplication
+      clock_t b = clock();
       s64 sw_result[wr*ac] = {0};
       for (int i = 0; i < wr; ++i) {
         for (int j = 0; j < ac; ++j) {
@@ -114,9 +126,12 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
           }
         }
       }
+      clock_t e = clock();
+      double software_elapsed = double(e-b) / CLOCKS_PER_SEC;
+      cout << "software elapsed: "<< software_elapsed << endl;
 
 
-#if 0
+#if 1
       // DEBUG PRINTING :D
       printf("W:\n");
       for (int i = 0; i < wr; ++i) {
@@ -132,11 +147,13 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
         }
         printf("\n");
       }
+
       printf("\nPACKED W:\n");
-      for (int i = 0; i < wpr * wpc * wpd; ++i)
+      for (int i = 0; i < WP_len; ++i) {
         printf("%llu ", WP[i]);
+      }
       printf("\nPACKED AT:\n");
-      for (int i = 0; i < apr * apc * apd; ++i)
+      for (int i = 0; i < ATP_len; ++i)
         printf("%llu ", ATP[i]);
 #endif
 #if 1
@@ -153,9 +170,9 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
     /////////////////////////////////////////
 
 
-      int w_bytes = wpr * wpc * wpd * sizeof(u64);
-      int a_bytes = apr * apc * apd * sizeof(u64);
-      int r_bytes = out_rows * out_cols * sizeof(s64);
+      int w_bytes = WP_len * sizeof(u64);
+      int a_bytes = ATP_len * sizeof(u64);
+      int r_bytes = out_len * sizeof(s64);
 
       // Allocate and copy matrices to DRAM
       void *dram_w = platform->allocAccelBuffer(w_bytes);
@@ -181,41 +198,34 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
 
       t.set_num_chn(num_chn);
 
+      clock_t begin = clock();
       t.set_start(1);
       while (t.get_done()!=1);
+      clock_t end = clock();
+      double hardware_elapsed = double(end-begin) / CLOCKS_PER_SEC;
+      cout << "elapsed: " << hardware_elapsed << endl;
+      cout << "hardware is " << software_elapsed / hardware_elapsed << " times faster." << endl;
 
       // FPGA result is produced transposed also
-      s64 *hw_result_trans = new s64[out_rows * out_cols];
-      s64 *hw_result       = new s64[out_rows * out_cols];
+      s64 *hw_result_trans = new s64[out_len];
       platform->copyBufferAccelToHost(dram_r, hw_result_trans, r_bytes); 
 
       t.set_start(0);
 
-      // Transpose to get the correct result
-      for (int i = 0; i < out_rows; ++i) {
-        for (int j = 0; j < out_cols; ++j) {
-          s64 r = hw_result_trans[j * out_rows + i];
-          hw_result[i * out_cols + j] = r;
-        }
-      }
-#if 1
-      printf("Hardware result:\n");
-      for (int i = 0; i < out_rows; ++i) {
-        for (int j = 0; j < out_cols; ++j) {
-          printf("%lld ", hw_result[i * out_cols + j]);
-        }
-        printf("\n");
-      }
-#endif
+      ////////////  NEED TO DO THIS IN SOFTWARE
+      // numpy.transpose(matrix7, axes=(1, 0, 2)).tolist()
+      ////////////
+      for (int i = 0; i < out_len; ++i)
+        printf("%lld ", hw_result_trans[i]);
+      printf("\n");
 
-      int succ = memcmp(sw_result, hw_result, out_rows * out_cols * sizeof(s64));
+      int succ = memcmp(sw_result, hw_result_trans, out_len * sizeof(s64));
       if (succ != 0) {
         printf("memcmp=%d\n", succ);
         printf("%d %d\n", rr, cc);
       }
 
       delete[] hw_result_trans;
-      delete[] hw_result;
       platform->deallocAccelBuffer(dram_w);
       platform->deallocAccelBuffer(dram_a);
       platform->deallocAccelBuffer(dram_r);
