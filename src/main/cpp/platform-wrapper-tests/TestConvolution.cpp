@@ -41,12 +41,14 @@ void Run_TestConvolution(WrapperRegDriver* platform)
   const int word_size_in_bits = 64;
     
   const int num_input_channels = 5, num_output_channels = 3,
-    num_input_bitplanes = 3;
+    num_input_bitplanes = 5;
     
   const int image_width = 23, image_height = 27;
 
-  const int window_size = 11, stride = 4;
-  const int num_filter_bitplanes = 4;
+  const int window_size = 11, strideExponent = 2;
+  const int num_filter_bitplanes = 3;
+
+  const int stride = 1 << strideExponent;
 
   // Obs, lower limit may need to be changed
   std::uniform_int_distribution<int8_t> input_distribution(-(1 << (num_input_bitplanes - 1)), (1 << (num_input_bitplanes - 1)) - 1);
@@ -79,9 +81,6 @@ void Run_TestConvolution(WrapperRegDriver* platform)
     }
   }
 
-  //Debug:
-  image[0] = 0;
-  image[1] = -1;
 
   const int packed_image_row_size_in_bytes = ceilNum(image_width, word_size_in_bits) / 8,
     packed_image_size_per_bitplane = image_height * packed_image_row_size_in_bytes,
@@ -127,9 +126,6 @@ void Run_TestConvolution(WrapperRegDriver* platform)
     }
   }
 
-  // Debug:
-  filters[0] = -1;
-  //filters[1] = -1;
 
   
   const int packed_filters_channel_size_in_bytes = ceilNum(window_size * window_size, word_size_in_bits) / 8;
@@ -214,7 +210,7 @@ void Run_TestConvolution(WrapperRegDriver* platform)
   t.set_imageNumBits(num_input_bitplanes);
   t.set_imageNumChannels(num_input_channels);
   
-  t.set_stride(stride);
+  t.set_strideExponent(strideExponent);
   t.set_windowSize(window_size);
   t.set_numOutputChannels(num_output_channels);
   t.set_filtersNumBits(num_filter_bitplanes);

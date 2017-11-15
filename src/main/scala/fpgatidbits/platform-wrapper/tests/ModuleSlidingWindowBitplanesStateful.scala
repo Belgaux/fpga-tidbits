@@ -8,7 +8,6 @@ import fpgatidbits.streams._
 import fpgatidbits.PlatformWrapper._
 import fpgatidbits.rosetta._
 
-
 // Expects input of form channel/bits/rows/columns, with every row padded to wordsize bits
 class ModuleSlidingWindowBitplanesStateful(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module {
   val wordSizeInBits = _wordSizeInBits
@@ -21,7 +20,7 @@ class ModuleSlidingWindowBitplanesStateful(p: PlatformWrapperParams, _wordSizeIn
     val numBits = UInt(INPUT, width=16)
     val numChannels = UInt(INPUT, width=16)
     val windowSize = UInt(INPUT, width=8)
-    val stride = UInt(INPUT, width=4) // Keep low for division purposes
+    val strideExponent = UInt(INPUT, width=3)
     val addrImage =  UInt(INPUT, width=wordSizeInBits)
     val addrResult = UInt(INPUT, width=wordSizeInBits)
     val start = Bool(INPUT)
@@ -42,7 +41,7 @@ class ModuleSlidingWindowBitplanesStateful(p: PlatformWrapperParams, _wordSizeIn
   val writer = io.writerIF
 
   // Set initial state
-  val s_idle :: s_fill_bram_start :: s_fill_bram_read_row :: s_fill_bram_row_finished :: s_fill_bram_all_rows_finished :: s_fill_window_size_buffer_configure_bram :: s_fill_window_size_buffer_fill :: s_write_buffer_enqueue :: s_write_buffer_loopback :: s_write_buffer_finished_channel :: s_wait_for_writer_finish :: s_finished :: Nil = Enum(UInt(), 12) 
+  val s_idle :: s_fill_bram_start :: s_fill_bram_setup_reader :: s_fill_bram_read_row :: s_fill_bram_row_finished :: s_fill_bram_all_rows_finished :: s_fill_window_size_buffer_configure_bram :: s_fill_window_size_buffer_fill :: s_write_buffer_enqueue :: s_write_buffer_loopback :: s_write_buffer_finished_channel :: s_wait_for_writer_finish :: s_finished :: Nil = Enum(UInt(), 13) 
   val state = Reg(init=UInt(s_idle))
 
   reader.baseAddr := UInt(0)
@@ -96,6 +95,8 @@ class ModuleSlidingWindowBitplanesStateful(p: PlatformWrapperParams, _wordSizeIn
   bramReadPort.req.addr := io.checkAddrBRAM
   io.debugOutput := bramReadPort.rsp.readData
 
+  val stride = UInt(1) << io.strideExponent
+
   val currInputRow = Reg(init=UInt(width=16))
   val currInputCol = Reg(init=UInt(width=32))
   val currInputBitplane = Reg(init=UInt(width=16))
@@ -139,7 +140,7 @@ class ModuleSlidingWindowBitplanesStateful(p: PlatformWrapperParams, _wordSizeIn
   val windowSizeSquared = Reg(init=UInt(0, width=16))
   val paddedWindowSizeSquaredSizeInBits = Reg(init=UInt(0))
   val paddedWindowSizeSquaredSizeInBytes = paddedWindowSizeSquaredSizeInBits >> 3
-  val outputRowSizeInWords  = ((windowSizeSquared + UInt(wordSizeInBits - 1)) >> wordBitExponent) * io.numChannels
+  val outputRowSizeInWords = Reg(next=(Reg(next=(windowSizeSquared + UInt(wordSizeInBits - 1) >> wordBitExponent)) *io.numChannels))
   val outputRowSizeInBytes = outputRowSizeInWords << wordByteExponent
   val outputBitplaneSizeInBytes = Reg(init=UInt(0, width=32))
   val outputNumRowsPerBitplane = Reg(init = UInt(0, width = 32))
@@ -148,20 +149,26 @@ class ModuleSlidingWindowBitplanesStateful(p: PlatformWrapperParams, _wordSizeIn
 
   val windowSizeMask = Reg(init = UInt(0, width=16))
 
+  val currOutputBitplaneOffset = Reg(next=outputBitplaneSizeInBytes * currInputBitplane)
+  val currOutputRowOffset = Reg(next = outputRowSizeInBytes * currOutputRow)
+  val currOutputChannelOffset = Reg(next=currInputChannel * paddedWindowSizeSquaredSizeInBytes)
+
   inputBitplaneSizeInBytes := io.numRows * inputBytesPerRow
   inputChannelSizeInBytes := io.numBits * inputBitplaneSizeInBytes
   inputBitsChannelsOffset := inputChannelSizeInBytes * currInputChannel + inputBitplaneSizeInBytes * currInputBitplane
 
   windowSizeSquared := io.windowSize * io.windowSize
   paddedWindowSizeSquaredSizeInBits := ((windowSizeSquared + UInt(wordSizeInBits - 1)) >> wordBitExponent) << wordBitExponent
-  outputNumRowsPerBitplane := ((io.numRows - io.windowSize)/io.stride + UInt(1)) * ((io.numCols - io.windowSize)/io.stride + UInt(1))
-  outputBitplaneSizeInBytes := (outputNumRowsPerBitplane * outputRowSizeInWords) << wordByteExponent
+  outputNumRowsPerBitplane := Reg(next= (Reg(next=(((io.numRows - io.windowSize) >> io.strideExponent) + UInt(1))) * Reg(next=(((io.numCols - io.windowSize) >> io.strideExponent) + UInt(1)))))
+  outputBitplaneSizeInBytes := (outputNumRowsPerBitplane * outputRowSizeInBytes)
 
   windowSizeMask := (UInt(1) << io.windowSize) - UInt(1)
 
   writer.byteCount := paddedWindowSizeSquaredSizeInBytes
 
-  //printf("Tick\n")
+  val readerInputRow = Reg(next = (currInputRow + io.windowSize - numBRAMRowsToFill + bramInputFillingRow))
+  val readerInputRowOffset = Reg(next = (readerInputRow * inputBytesPerRow))
+  val bramOutputFillingRowOffset = Reg(next = (bramOutputFillingRow * inputWordsPerRow))
 
   switch (state){
     is(s_idle){
@@ -182,12 +189,21 @@ class ModuleSlidingWindowBitplanesStateful(p: PlatformWrapperParams, _wordSizeIn
     }
 
     is(s_fill_bram_start){
+      val counter = Reg(init=UInt(0, width=4))
+      counter := counter + UInt(1)
+      when(counter === UInt(2)){
+        counter := UInt(0)
+        state := s_fill_bram_setup_reader
+      }
+    }
+
+    is(s_fill_bram_setup_reader){
       //printf("2\n")
-      reader.baseAddr := io.addrImage + inputBitsChannelsOffset + (currInputRow + io.windowSize - numBRAMRowsToFill + bramInputFillingRow) * inputBytesPerRow
+      reader.baseAddr := io.addrImage + inputBitsChannelsOffset + readerInputRowOffset
       reader.byteCount := inputWordsPerRow << wordByteExponent
       readerEnableReg := Bool(true)
       reader.out.ready := Bool(true)
-      bramWritePort.req.addr :=  bramOutputFillingRow * inputWordsPerRow + bramInputFillingColWord
+      bramWritePort.req.addr :=  bramOutputFillingRowOffset + bramInputFillingColWord
       bramWritePort.req.writeEn := reader.out.valid
       bramWritePort.req.writeData := reader.out.bits
 
@@ -297,7 +313,7 @@ class ModuleSlidingWindowBitplanesStateful(p: PlatformWrapperParams, _wordSizeIn
     is(s_write_buffer_enqueue){
       //printf("8\n")
       when(timesWriterFinished === writerWaitForNumFinished){
-        writer.baseAddr := io.addrResult + outputBitplaneSizeInBytes * currInputBitplane + outputRowSizeInBytes * currOutputRow + currInputChannel * (paddedWindowSizeSquaredSizeInBytes)
+        writer.baseAddr := io.addrResult + currOutputBitplaneOffset + currOutputRowOffset + currOutputChannelOffset
         writer.start := Bool(true)
         writer.byteCount := paddedWindowSizeSquaredSizeInBytes  // From bits to bytes
         writer.in.valid := Bool(true)
@@ -334,13 +350,13 @@ class ModuleSlidingWindowBitplanesStateful(p: PlatformWrapperParams, _wordSizeIn
             numBRAMRowsToFill := io.windowSize
             currInputRow := UInt(0)
           }.otherwise{
-            numBRAMRowsToFill := io.stride
-            currInputRow := currInputRow + io.stride
+            numBRAMRowsToFill := stride
+            currInputRow := currInputRow + stride
           }
         }.otherwise{
-          wBufferFillReadColumnBitInWord := (currInputCol + io.stride) & UInt(wordSizeInBits - 1)
-          wBufferFillReadColumnWord := (currInputCol + io.stride) >> wordBitExponent
-          currInputCol := currInputCol + io.stride
+          wBufferFillReadColumnBitInWord := (currInputCol + stride) & UInt(wordSizeInBits - 1)
+          wBufferFillReadColumnWord := (currInputCol + stride) >> wordBitExponent
+          currInputCol := currInputCol + stride
         }
 
         when(currOutputRow === outputNumRowsPerBitplane - UInt(1)){ // Finished with a channel batch
