@@ -31,7 +31,7 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
     val imageNumBits = UInt(INPUT, width=4)
     val imageNumChannels = UInt(INPUT, width=16)
 
-    val stride = UInt(INPUT, width=4)
+    val strideExponent = UInt(INPUT, width=3)
     val windowSize = UInt(INPUT, width=4)
     val numOutputChannels = UInt(INPUT, width=16)
 
@@ -98,8 +98,8 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
   val resultTotalSizeInBytes = Reg(init=UInt(0, width=32))
 
   windowSizeSquared := io.windowSize * io.windowSize
-  slidedWindowNumWidth := (io.imageWidth - io.windowSize)/io.stride + UInt(1)
-  slidedWindowNumHeight := (io.imageHeight - io.windowSize)/io.stride + UInt(1)
+  slidedWindowNumWidth := ((io.imageWidth - io.windowSize) >> io.strideExponent) + UInt(1)
+  slidedWindowNumHeight := ((io.imageHeight - io.windowSize) >> io.strideExponent) + UInt(1)
   slidedWindowNumRowsInBitplane := slidedWindowNumHeight * slidedWindowNumWidth
   slidedWindowSizeInWords := ((windowSizeSquared + UInt(wordSizeInBits - 1)) >> wordBitExponent)
   slidedWindowRowSizeInWords := slidedWindowSizeInWords * io.imageNumChannels
@@ -121,18 +121,18 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
   windowSlider.numRows := io.imageHeight
   windowSlider.numChannels := io.imageNumChannels
   windowSlider.numBits := io.imageNumBits
-  windowSlider.stride := io.stride
+  windowSlider.strideExponent := io.strideExponent
   windowSlider.windowSize := io.windowSize
   windowSlider.addrImage := io.imageAddr
   windowSlider.addrResult := io.tempAddr
   windowSlider.start := Bool(false)
 
 
-  val multiplier = Module(new ModuleBinaryGEMM(p, wordSizeInBits)).io
+  val multiplier = Module(new ModuleBinaryGEMMOptimized(p, wordSizeInBits)).io
   multiplier.lhs_addr := io.filterAddr
   multiplier.rhs_addr := io.tempAddr
   multiplier.res_addr := io.outputAddr
-  multiplier.res_byte_count := resultTotalSizeInBytes
+  multiplier.num_chn := UInt(1)
 
   multiplier.lhs_rows := io.numOutputChannels 
   multiplier.lhs_cols := slidedWindowRowSizeInWords
@@ -156,17 +156,17 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
   windowSlider.writerIF.in.ready := Bool(false)
   windowSlider.writerIF.active := Bool(false)
 
-  multiplier.readerIF1.finished := Bool(false)
-  multiplier.readerIF1.out.bits := UInt(0)
-  multiplier.readerIF1.out.valid := Bool(false)
+  multiplier.lhs_reader.finished := Bool(false)
+  multiplier.lhs_reader.out.bits := UInt(0)
+  multiplier.lhs_reader.out.valid := Bool(false)
 
-  multiplier.readerIF2.finished := Bool(false)
-  multiplier.readerIF2.out.bits := UInt(0)
-  multiplier.readerIF2.out.valid := Bool(false)
+  multiplier.rhs_reader.finished := Bool(false)
+  multiplier.rhs_reader.out.bits := UInt(0)
+  multiplier.rhs_reader.out.valid := Bool(false)
 
-  multiplier.writerIF.finished := Bool(false)
-  multiplier.writerIF.in.ready := Bool(false)
-  multiplier.writerIF.active := Bool(false)
+  multiplier.writer.finished := Bool(false)
+  multiplier.writer.in.ready := Bool(false)
+  multiplier.writer.active := Bool(false)
 
 
   switch(state) {
@@ -202,6 +202,9 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
 
       when(windowSlider.finished){
         io.finishedWithSlidingWindow := Bool(true)
+        writer.start := Bool(false)
+        reader1.start := Bool(false)
+        reader2.start := Bool(false)
         state := s_running_multiplication
       }
     }
@@ -211,35 +214,35 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
       io.finishedWithSlidingWindow := Bool(true)
       multiplier.start := Bool(true)
 
-      multiplier.readerIF1.out.bits := reader1.out.bits
-      multiplier.readerIF1.out.valid := reader1.out.valid
-      reader1.out.ready := multiplier.readerIF1.out.ready
+      multiplier.lhs_reader.out.bits := reader1.out.bits
+      multiplier.lhs_reader.out.valid := reader1.out.valid
+      reader1.out.ready := multiplier.lhs_reader.out.ready
 
-      reader1.byteCount := multiplier.readerIF1.byteCount
-      reader1.baseAddr := multiplier.readerIF1.baseAddr
-      reader1.start := multiplier.readerIF1.start
-      multiplier.readerIF1.finished := reader1.finished
-      //reader1 <> multiplier.readerIF1
+      reader1.byteCount := multiplier.lhs_reader.byteCount
+      reader1.baseAddr := multiplier.lhs_reader.baseAddr
+      reader1.start := multiplier.lhs_reader.start
+      multiplier.lhs_reader.finished := reader1.finished
+      //reader1 <> multiplier.lhs_reader
 
-      multiplier.readerIF2.out.bits := reader2.out.bits
-      multiplier.readerIF2.out.valid := reader2.out.valid
-      reader2.out.ready := multiplier.readerIF2.out.ready
+      multiplier.rhs_reader.out.bits := reader2.out.bits
+      multiplier.rhs_reader.out.valid := reader2.out.valid
+      reader2.out.ready := multiplier.rhs_reader.out.ready
 
-      reader2.byteCount := multiplier.readerIF2.byteCount
-      reader2.baseAddr := multiplier.readerIF2.baseAddr
-      reader2.start := multiplier.readerIF2.start
-      multiplier.readerIF2.finished := reader2.finished
-      //reader2 <> multiplier.readerIF2
+      reader2.byteCount := multiplier.rhs_reader.byteCount
+      reader2.baseAddr := multiplier.rhs_reader.baseAddr
+      reader2.start := multiplier.rhs_reader.start
+      multiplier.rhs_reader.finished := reader2.finished
+      //reader2 <> multiplier.rhs_reader
 
-      writer.in.bits := multiplier.writerIF.in.bits
-      writer.in.valid := multiplier.writerIF.in.valid
-      multiplier.writerIF.in.ready := writer.in.ready
+      writer.in.bits := multiplier.writer.in.bits
+      writer.in.valid := multiplier.writer.in.valid
+      multiplier.writer.in.ready := writer.in.ready
 
-      writer.byteCount := multiplier.writerIF.byteCount
-      writer.baseAddr := multiplier.writerIF.baseAddr
-      writer.start := multiplier.writerIF.start
-      multiplier.writerIF.finished := writer.finished
-      multiplier.writerIF.active := writer.active
+      writer.byteCount := multiplier.writer.byteCount
+      writer.baseAddr := multiplier.writer.baseAddr
+      writer.start := multiplier.writer.start
+      multiplier.writer.finished := writer.finished
+      multiplier.writer.active := writer.active
       //writer <> multiplier.writerIF
 
       when(multiplier.done){
