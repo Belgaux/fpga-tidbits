@@ -17,10 +17,10 @@ typedef uint64_t u64;
 typedef int32_t s32;
 typedef int64_t s64;
 
-#include "TestBitserialGEMM.hpp"
-void Run_TestBitserialGEMM(WrapperRegDriver* platform) 
+#include "QBART.hpp"
+void Run_QBART(WrapperRegDriver* platform) 
 {
-  TestBitserialGEMM t(platform);
+  QBART t(platform);
  
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
   std::mt19937_64 generator (seed);
@@ -52,7 +52,7 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
 
       int lhs_issigned = 1;
       int rhs_issigned = 1;
-      int num_chn = 2;
+      int num_chn = 1;
       int out_len = num_chn * out_rows * out_cols;
       
       /////////// W
@@ -196,6 +196,8 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
       t.set_rhs_bits(apd);
       t.set_rhs_issigned(rhs_issigned);
 
+      t.set_fc(1);
+
       t.set_num_chn(num_chn);
 
       clock_t begin = clock();
@@ -238,7 +240,7 @@ int main()
 {
   WrapperRegDriver * platform = initPlatform();
 
-  Run_TestBitserialGEMM(platform);
+  Run_QBART(platform);
 
   deinitPlatform(platform);
   return 0;

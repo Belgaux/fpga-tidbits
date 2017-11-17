@@ -106,7 +106,7 @@ class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
 
   val out_queue = Decoupled(SInt(width=word_size))
   out_queue.valid := Bool(false)
-  out_queue.bits := UInt(666) // debug value, should never happen
+  out_queue.bits := UInt(0)
   io.writer.in <> FPGAQueue(out_queue, output_queue_size)
 
 
@@ -115,6 +115,7 @@ class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
   io.lhs_reader.baseAddr := lhs_base_addr
   io.lhs_reader.byteCount := bytes_per_row
   io.lhs_reader.start := Bool(false)
+
   io.rhs_reader.baseAddr := rhs_base_addr
   io.rhs_reader.byteCount := bytes_per_row
   io.rhs_reader.start := Bool(false)
