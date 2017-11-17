@@ -47,7 +47,7 @@ class Convolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module 
     val finished = Bool(OUTPUT)
   }
 
-  val reader0 = io.reader1IF
+  val reader0 = io.reader0IF
   val reader1 = io.reader1IF
 
   val writer = io.writerIF
@@ -232,10 +232,6 @@ class Convolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module 
       multiplier.writer.finished := writer.finished
       multiplier.writer.active := writer.active
       //writer <> multiplier.writerIF
-
-      when(writer.in.ready && writer.in.valid){
-        printf("Writer data: %b\n", writer.in.bits)
-      }
 
       when(multiplier.done){
         state := s_finished

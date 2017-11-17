@@ -125,9 +125,6 @@ class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
     io.rhs_reader.start := Bool(true)  
   }
 
-  when(io.lhs_reader.out.ready && io.lhs_reader.out.valid){
-    printf("Left reader: %b\n", io.lhs_reader.out.bits)
-  }
 
 
   ///////// PROCESSING ELEMENT

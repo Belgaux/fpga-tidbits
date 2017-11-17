@@ -172,7 +172,6 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
 
   switch (state){
     is(s_idle){
-      //printf("1\n")
       when(io.start){
         state := s_fill_bram_start
         numBRAMRowsToFill := io.windowSize
@@ -198,7 +197,6 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
     }
 
     is(s_fill_bram_setup_reader){
-      //printf("2\n")
       reader.baseAddr := io.addrImage + inputBitsChannelsOffset + readerInputRowOffset
       reader.byteCount := inputWordsPerRow << wordByteExponent
       readerEnableReg := Bool(true)
@@ -209,13 +207,10 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
 
       when(reader.out.valid){ // Another word is transferred
         state := s_fill_bram_read_row
-        //printf("Read into BRAM: %b\n", reader.out.bits)
       }
     }
 
     is(s_fill_bram_read_row){
-      //printf("3\n")
-      //printf("Writing %b to address %d in BRAM\n", bramWritePort.req.writeData, bramWritePort.req.addr)
         reader.start := Bool(false)
         when(bramInputFillingColWord === inputWordsPerRow - UInt(1)){ // Finished reading in row
           state := s_fill_bram_row_finished
@@ -226,7 +221,6 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
     }
 
     is(s_fill_bram_row_finished){
-      //printf("4\n")
       bramInputFillingColWord := UInt(0)
 
       when(bramOutputFillingRow === io.windowSize - UInt(1)){
@@ -246,7 +240,6 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
     }
 
     is(s_fill_bram_all_rows_finished){
-      //printf("5\n")
       bramInputFillingRow := UInt(0)
       currStartBRAMRow := bramOutputFillingRow
       wBufferFillReadRow := bramOutputFillingRow
@@ -258,12 +251,11 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
       temporaryBuffer := UInt(0)
       wBufferFillNumBitsReadOnRow := UInt(0)
       wBufferFillNumRowsRead := UInt(0)
-      //printf("Filled BRAM, currInputChannel = %d\n", currInputChannel)
+
       state := s_fill_window_size_buffer_configure_bram
     }
 
     is(s_fill_window_size_buffer_configure_bram){
-      //printf("6\n")
       when(wBufferFillNumBitsReadOnRow + UInt(wordSizeInBits) - wBufferFillReadColumnBitInWord < io.windowSize){
         wBufferFillReadColumnWord := wBufferFillReadColumnWord + UInt(1)
         wBufferFillReadColumnBitInWord := UInt(0)
@@ -288,17 +280,13 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
       wBufferFillLastCycleColBitInWord := wBufferFillReadColumnBitInWord
 
       bramReadPort.req.addr := wBufferFillReadRow * inputWordsPerRow + wBufferFillReadColumnWord
-      //printf("Configured with address %x\n", bramReadPort.req.addr)
-      //printf("readrow: %d\n", wBufferFillReadRow)
       wBufferFillValidReadBRAM := Bool(true)
 
       state := s_fill_window_size_buffer_fill
     }
 
     is(s_fill_window_size_buffer_fill){
-      //printf("7\n")
       val readAndFilteredFromBRAM = UInt((bramReadPort.rsp.readData >> wBufferFillLastCycleColBitInWord) & wBufferFillRemainMask, width=16)
-      //printf("Appending %b to tempbuffer\n", readAndFilteredFromBRAM)
       val newTemp = (temporaryBuffer | (readAndFilteredFromBRAM << wBufferFillWritePosition))
       temporaryBuffer := newTemp
       wBufferFillWritePosition := wBufferFillWritePosition + wBufferFillLastStride
@@ -311,7 +299,6 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
     }
 
     is(s_write_buffer_enqueue){
-      //printf("8\n")
       when(timesWriterFinished === writerWaitForNumFinished){
         writer.baseAddr := io.addrResult + currOutputBitplaneOffset + currOutputRowOffset + currOutputChannelOffset
         writer.start := Bool(true)
@@ -326,8 +313,6 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
     }
 
     is(s_write_buffer_loopback){
-      //printf("9\n")
-      //printf("Queued chunk %d\n", timesWriterFinished)
       when(currTempBufferOutputBit === paddedWindowSizeSquaredSizeInBits - UInt(wordSizeInBits)){ // Finished with whole temp buffer
         writerWaitForNumFinished := writerWaitForNumFinished + UInt(1)
         currTempBufferOutputBit := UInt(0)
@@ -371,19 +356,16 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
     }
 
     is(s_write_buffer_finished_channel){
-      //printf("10\n")
       numBRAMRowsToFill := io.windowSize
       currOutputRow := UInt(0)
 
       state := s_fill_bram_start
       when(currInputChannel === io.numChannels - UInt(1)){ // Finished with all channels of a bitplane
-        //printf("CurrChannel: %d\n", currInputChannel)
         currInputChannel := UInt(0)
         when(currInputBitplane === io.numBits - UInt(1)){ // Finished all bitplanes
           state := s_wait_for_writer_finish
         }.otherwise{
           currInputBitplane := currInputBitplane + UInt(1)
-          //printf("CurrInPlanes : %d\n", currInputBitplane)
         }
       }.otherwise{
         currInputChannel := currInputChannel + UInt(1)
@@ -391,7 +373,6 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
     }
 
     is(s_wait_for_writer_finish){
-      //printf("11\n")
       writer.start := Bool(true)
       when(writer.finished){
         state := s_finished
@@ -399,7 +380,6 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
     }
 
     is(s_finished){
-      //printf("12\n")
       io.finished := Bool(true)
       when(~io.start){
         state := s_idle

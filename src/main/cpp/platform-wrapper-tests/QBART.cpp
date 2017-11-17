@@ -265,13 +265,13 @@ void Run_Convolution(WrapperRegDriver* platform)
 
   const int word_size_in_bits = 64;
     
-  const int num_input_channels = 1, num_output_channels = 1,
+  const int num_input_channels = 3, num_output_channels = 9,
     num_input_bitplanes = 4;
     
-  const int image_width = 1, image_height = 1;
+  const int image_width = 27, image_height = 27;
 
-  const int window_size = 1, strideExponent = 0;
-  const int num_filter_bitplanes = 4;
+  const int window_size = 11, strideExponent = 2;
+  const int num_filter_bitplanes = 5;
 
   const int stride = 1 << strideExponent;
 
