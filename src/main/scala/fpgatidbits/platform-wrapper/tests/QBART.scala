@@ -157,9 +157,9 @@ class QBART(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   conv.reader1IF.out.bits := reader1.out.bits
   conv.reader1IF.finished := reader1.finished
 
-  conv.writerIF.finished := writer.finished
-  conv.writerIF.in.ready := writer.in.ready
-  conv.writerIF.active := writer.active
+  conv.writerIF.finished := Bool(false)
+  conv.writerIF.in.ready := Bool(false)
+  conv.writerIF.active := Bool(false)
 
   io.finishedWithSlidingWindow := conv.finishedWithSlidingWindow
 
@@ -202,35 +202,40 @@ class QBART(p: PlatformWrapperParams) extends GenericAccelerator(p) {
         fc.start := Bool(true)
       }
     }
-    
+
     is (s_conv) {
-      reader0.baseAddr := conv.reader0IF.baseAddr
-      reader0.byteCount := conv.reader0IF.byteCount
-      reader0.start := conv.reader0IF.start
-      reader0.out.ready := conv.reader0IF.out.ready
-
-      reader1.baseAddr := conv.reader1IF.baseAddr
-      reader1.byteCount := conv.reader1IF.byteCount
-      reader1.start := conv.reader1IF.start
-      reader1.out.ready := conv.reader1IF.out.ready
-
-      writer.baseAddr := conv.writerIF.baseAddr
-      writer.byteCount := conv.writerIF.byteCount
-      writer.start := conv.writerIF.start
-      writer.in.bits := conv.writerIF.in.bits
-      writer.in.valid := conv.writerIF.in.valid
-
-      conv.start := Bool(true)
-
-      when(conv.finished){
+      when (conv.finished) {
         state := s_done
       }
+      .otherwise {
+        reader0.baseAddr := conv.reader0IF.baseAddr
+        reader0.byteCount := conv.reader0IF.byteCount
+        reader0.start := conv.reader0IF.start
+        reader0.out.ready := conv.reader0IF.out.ready
+
+        reader1.baseAddr := conv.reader1IF.baseAddr
+        reader1.byteCount := conv.reader1IF.byteCount
+        reader1.start := conv.reader1IF.start
+        reader1.out.ready := conv.reader1IF.out.ready
+
+        writer.baseAddr := conv.writerIF.baseAddr
+        writer.byteCount := conv.writerIF.byteCount
+        writer.start := conv.writerIF.start
+        writer.in.bits := conv.writerIF.in.bits
+        writer.in.valid := conv.writerIF.in.valid
+
+        conv.writerIF.finished := writer.finished
+        conv.writerIF.in.ready := writer.in.ready
+        conv.writerIF.active := writer.active
+
+        conv.start := Bool(true)
+      }
     }
-    
+
     is (s_thresh) {
-    
+
     }
-    
+
     is (s_done) {
       io.done := Bool(true)
       when (!io.start) { state := s_idle }

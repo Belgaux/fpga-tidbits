@@ -194,7 +194,6 @@ void Run_FullyConnected(WrapperRegDriver* platform)
       t.set_rhs_issigned(rhs_issigned);
 
       t.set_fc(1);
-
       t.set_num_chn(num_chn);
 
       t.set_start(1);
@@ -204,6 +203,7 @@ void Run_FullyConnected(WrapperRegDriver* platform)
       s64 *hw_result_trans = new s64[out_len];
       platform->copyBufferAccelToHost(dram_r, hw_result_trans, r_bytes); 
 
+      t.set_fc(0);
       t.set_start(0);
 
       ////////////  NEED TO DO THIS IN SOFTWARE
@@ -435,7 +435,6 @@ void Run_Convolution(WrapperRegDriver* platform)
   t.set_filtersNumBits(num_filter_bitplanes);
 
   t.set_conv(1);
-  
   t.set_start(1);
 
   while(!t.get_finishedWithSlidingWindow());
@@ -443,6 +442,7 @@ void Run_Convolution(WrapperRegDriver* platform)
   
   while(!t.get_done());
 
+  t.set_conv(0);
   t.set_start(0);
   printf("Finished entire convolution!\n");
 
@@ -617,14 +617,21 @@ void Run_Convolution(WrapperRegDriver* platform)
   if(equal){
     printf("The results were equal!\n");
   }
+
+  platform->deallocAccelBuffer(dram_image);
+  platform->deallocAccelBuffer(dram_filters);
+  platform->deallocAccelBuffer(dram_result);
+  platform->deallocAccelBuffer(temp_buffer);
 }
 
 int main()
 {
   WrapperRegDriver * platform = initPlatform();
 
-  Run_FullyConnected(platform);
-  Run_Convolution(platform);
+  for (int i = 0; i < 2; ++i) {
+    Run_FullyConnected(platform);
+    Run_Convolution(platform);
+  }
   deinitPlatform(platform);
   return 0;
 }
