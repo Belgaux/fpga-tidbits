@@ -24,7 +24,7 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
  
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
   std::mt19937_64 generator (seed);
-  std::uniform_int_distribution<s64> distribution(1, 1); 
+  std::uniform_int_distribution<s64> distribution(-1, 1); 
 
 
   // loops for testing lots of matrices
@@ -36,13 +36,13 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
       int word_size = 64;
       
       int wr = 4;
-      int wc = 4;
-      int wd = 1;
+      int wc = 64;
+      int wd = 2;
       s64 W[wr*wc];
 
       int ar = wc;
-      int ac = 2;
-      int ad = 1;
+      int ac = 1;
+      int ad = 2;
 
       printf("\nMatrix dim: W=(%d, %d) A=(%d, %d)\n", wr, wc, ar, ac);
       printf("\nBit depths: %d, %d\n", wd, ad);
@@ -50,16 +50,16 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
       int out_rows = wr;
       int out_cols = ac;
 
-      int lhs_issigned = 0;
-      int rhs_issigned = 0;
-      int num_chn = 3;
+      int lhs_issigned = 1;
+      int rhs_issigned = 1;
+      int num_chn = 2;
       int out_len = num_chn * out_rows * out_cols;
       
       /////////// W
       for (int i = 0; i < wr; ++i) {
         for (int j = 0; j < wc; ++j) {
           s64 r = distribution(generator);
-          //r = (r == 0 ? -1 : r);
+          r = (r == 0 ? -1 : r);
           W[i*wc + j] = r;
         }
       }
@@ -71,7 +71,7 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
       int WP_len = wpr * wpc * wpd * num_chn;
       u64 WP[WP_len] = {0};
       for (int i = 0; i < WP_len; ++i)
-        WP[i] = 2;
+        WP[i] = 0;
       for (int d = 0; d < wd; ++d) {
         for (int i = 0; i < wr; ++i) {
           for (int j = 0; j < wc; ++j) {
@@ -89,7 +89,7 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
       for (int i = 0; i < ar; ++i) {
         for (int j = 0; j < ac; ++j) {
           s64 r = distribution(generator);
-          //r = (r==0 ? 1 : r);
+          r = (r==0 ? 1 : r);
           A[i*ac + j] = r;
           AT[j*ar + i] = r; // FPGA takes right-hand side transposed so we transpose A
         }
@@ -102,7 +102,7 @@ void Run_TestBitserialGEMM(WrapperRegDriver* platform)
       int ATP_len = apr * apc * apd * num_chn;
       u64 ATP[ATP_len] = {0};
       for (int i = 0; i < ATP_len; ++i)
-        ATP[i] = 1;
+        ATP[i] = 0;
       for (int d = 0; d < ad; ++d) {
         for (int i = 0; i < ac; ++i) {
           for (int j = 0; j < ar; ++j) {

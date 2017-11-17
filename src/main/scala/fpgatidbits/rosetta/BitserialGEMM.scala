@@ -1,9 +1,8 @@
-package fpgatidbits.Testbenches
+package fpgatidbits.rosetta
 
 import Chisel._
 import fpgatidbits.dma._
 import fpgatidbits.ocm._
-import fpgatidbits.rosetta._
 import fpgatidbits.PlatformWrapper._
 
 // Bitserial General Matrix Multiplication 
@@ -12,8 +11,8 @@ import fpgatidbits.PlatformWrapper._
 
 class BitserialGEMM(word_size : Int, p: PlatformWrapperParams) extends Module {
 
-  val output_queue_size = 8
-  val input_queue_size = 8
+  val output_queue_size = 16
+  val input_queue_size = 16
   val bytes_per_elem = UInt(word_size/8, width=8)
 
   val io = new Bundle {
