@@ -11,7 +11,7 @@ import fpgatidbits.rosetta._
 
 // Ties together the sliding window module and the matrix multiplication module
 // Presumes input image is of form channels/bitplanes/rows/columns with each row padded to 64 bits
-class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends GenericAccelerator(p) {
+class Convolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module {
   val wordSizeInBits = _wordSizeInBits
   val wordSizeInBytes = wordSizeInBits/8
 
@@ -20,7 +20,7 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
 
   val numMemPorts = 3
 
-  val io = new GenericAcceleratorIF(numMemPorts, p){
+  val io = new Bundle {
     val imageAddr = UInt(INPUT, width=64)
     val filterAddr = UInt(INPUT, width=64)
     val outputAddr = UInt(INPUT, width=64)
@@ -39,46 +39,34 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
 
     val start = Bool(INPUT)
     val finishedWithSlidingWindow = Bool(OUTPUT)
+
+    val reader1IF = new StreamReaderIF(wordSizeInBits, p.toMemReqParams()).flip
+    val reader2IF = new StreamReaderIF(wordSizeInBits, p.toMemReqParams()).flip
+    val writerIF = new StreamWriterIF(wordSizeInBits, p.toMemReqParams()).flip
+
     val finished = Bool(OUTPUT)
   }
 
-  def initialize_reader(port: Int) = {
-    val reader = Module(new StreamReader(new StreamReaderParams(
-      streamWidth = wordSizeInBits, fifoElems = 8, mem = p.toMemReqParams(),
-      maxBeats = 1, chanID = 0, disableThrottle = true
-    ))).io
-    reader.start := Bool(false)
-    plugMemWritePort(port)
-    reader.req <> io.memPort(port).memRdReq
-    reader.rsp <> io.memPort(port).memRdRsp
-    reader.baseAddr := UInt(0)
-    reader.byteCount := UInt(0)
-    reader.out.ready := Bool(false)
-    reader
-  }
+  val reader1 = io.reader1IF
+  val reader2 = io.reader2IF
 
-  def initialize_writer (port: Int) = {
-    val wr = Module(new StreamWriter(new StreamWriterParams(
-      streamWidth = p.memDataBits, mem = p.toMemReqParams(), chanID = 0
-    ))).io
-    wr.start := Bool(false)
-    wr.req <> io.memPort(port).memWrReq
-    wr.wdat <> io.memPort(port).memWrDat
-    io.memPort(port).memWrRsp <> wr.rsp
-    plugMemReadPort(port)
+  val writer = io.writerIF
 
-    wr.baseAddr := UInt(0)
-    wr.byteCount := UInt(0)
-    wr.in.valid := Bool(false)
-    wr.in.bits := UInt(0)
-    wr
-  }
+  reader1.baseAddr := UInt(0)
+  reader1.byteCount := UInt(0)
+  reader1.out.ready := Bool(false)
+  reader1.start := Bool(false)
 
+  reader2.baseAddr := UInt(0)
+  reader2.byteCount := UInt(0)
+  reader2.out.ready := Bool(false)
+  reader2.start := Bool(false)
 
-  val reader1 = initialize_reader(0)
-  val reader2 = initialize_reader(1)
-  val writer = initialize_writer(2)
-
+  writer.baseAddr := UInt(0)
+  writer.byteCount := UInt(0)
+  writer.in.valid := Bool(false)
+  writer.in.bits := UInt(0)
+  writer.start := Bool(false)
 
   //printf("Writer start: %d, baseAddr: %d, byteCount: %d, in.valid: %d, in.bits: %d, in.ready: %d\n",
   //  writer.start, writer.baseAddr, writer.byteCount, writer.in.valid, writer.in.bits, writer.in.ready)
@@ -115,7 +103,7 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
   io.finished := Bool(false)
   io.finishedWithSlidingWindow := Bool(false)
 
-  val windowSlider = Module(new ModuleSlidingWindowBitplanesStateful(p, wordSizeInBits)).io
+  val windowSlider = Module(new SlidingWindow(p, wordSizeInBits)).io
 
   windowSlider.numCols := io.imageWidth
   windowSlider.numRows := io.imageHeight
@@ -128,7 +116,7 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
   windowSlider.start := Bool(false)
 
 
-  val multiplier = Module(new ModuleBinaryGEMMOptimized(p, wordSizeInBits)).io
+  val multiplier = Module(new BitserialGEMM(wordSizeInBits, p)).io
   multiplier.lhs_addr := io.filterAddr
   multiplier.rhs_addr := io.tempAddr
   multiplier.res_addr := io.outputAddr

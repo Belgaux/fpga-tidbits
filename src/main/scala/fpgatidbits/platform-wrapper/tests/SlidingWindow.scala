@@ -9,7 +9,7 @@ import fpgatidbits.PlatformWrapper._
 import fpgatidbits.rosetta._
 
 // Expects input of form channel/bits/rows/columns, with every row padded to wordsize bits
-class ModuleSlidingWindowBitplanesStateful(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module {
+class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module {
   val wordSizeInBits = _wordSizeInBits
   val wordSizeInBytes = wordSizeInBits/8
   val numMemPorts = 2
