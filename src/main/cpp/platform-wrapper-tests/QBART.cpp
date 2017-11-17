@@ -19,7 +19,7 @@ typedef uint64_t u64;
 typedef int32_t s32;
 typedef int64_t s64;
 
-void Run_QBART(WrapperRegDriver* platform) 
+void Run_FullyConnected(WrapperRegDriver* platform) 
 {
   QBART t(platform);
  
@@ -29,15 +29,15 @@ void Run_QBART(WrapperRegDriver* platform)
 
 
   // loops for testing lots of matrices
-  for (int rr = 1; rr < 2; ++rr) {
-    for (int cc = 1; cc < 2; ++cc) {
+  for (int rr = 1; rr < 8; ++rr) {
+    for (int cc = 1; cc < 8; ++cc) {
 
     ////////////// GENERATING TEST MATRICES //////////
 
       int word_size = 64;
       
-      int wr = 4;
-      int wc = 64;
+      int wr = rr;
+      int wc = 64*cc;
       int wd = 2;
       s64 W[wr*wc];
 
@@ -116,7 +116,6 @@ void Run_QBART(WrapperRegDriver* platform)
       }
         
       // Matrix multiplication
-      clock_t b = clock();
       s64 sw_result[wr*ac] = {0};
       for (int i = 0; i < wr; ++i) {
         for (int j = 0; j < ac; ++j) {
@@ -127,12 +126,9 @@ void Run_QBART(WrapperRegDriver* platform)
           }
         }
       }
-      clock_t e = clock();
-      double software_elapsed = double(e-b) / CLOCKS_PER_SEC;
-      cout << "software elapsed: "<< software_elapsed << endl;
 
 
-#if 1
+#if 0
       // DEBUG PRINTING :D
       printf("W:\n");
       for (int i = 0; i < wr; ++i) {
@@ -201,13 +197,8 @@ void Run_QBART(WrapperRegDriver* platform)
 
       t.set_num_chn(num_chn);
 
-      clock_t begin = clock();
       t.set_start(1);
       while (t.get_done()!=1);
-      clock_t end = clock();
-      double hardware_elapsed = double(end-begin) / CLOCKS_PER_SEC;
-      cout << "elapsed: " << hardware_elapsed << endl;
-      cout << "hardware is " << software_elapsed / hardware_elapsed << " times faster." << endl;
 
       // FPGA result is produced transposed also
       s64 *hw_result_trans = new s64[out_len];
@@ -218,9 +209,12 @@ void Run_QBART(WrapperRegDriver* platform)
       ////////////  NEED TO DO THIS IN SOFTWARE
       // numpy.transpose(matrix7, axes=(1, 0, 2)).tolist()
       ////////////
+#if 1
+      printf("hardware_result:\n");
       for (int i = 0; i < out_len; ++i)
         printf("%lld ", hw_result_trans[i]);
       printf("\n");
+#endif
 
       int succ = memcmp(sw_result, hw_result_trans, out_len * sizeof(s64));
       if (succ != 0) {
@@ -629,7 +623,7 @@ int main()
 {
   WrapperRegDriver * platform = initPlatform();
 
-  //Run_QBART(platform);
+  Run_FullyConnected(platform);
   Run_Convolution(platform);
   deinitPlatform(platform);
   return 0;
