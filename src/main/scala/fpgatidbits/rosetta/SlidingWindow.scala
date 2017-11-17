@@ -209,7 +209,7 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
 
       when(reader.out.valid){ // Another word is transferred
         state := s_fill_bram_read_row
-        printf("Read into BRAM: %b\n", reader.out.bits)
+        //printf("Read into BRAM: %b\n", reader.out.bits)
       }
     }
 
@@ -288,8 +288,8 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
       wBufferFillLastCycleColBitInWord := wBufferFillReadColumnBitInWord
 
       bramReadPort.req.addr := wBufferFillReadRow * inputWordsPerRow + wBufferFillReadColumnWord
-      printf("Configured with address %x\n", bramReadPort.req.addr)
-      printf("readrow: %d\n", wBufferFillReadRow)
+      //printf("Configured with address %x\n", bramReadPort.req.addr)
+      //printf("readrow: %d\n", wBufferFillReadRow)
       wBufferFillValidReadBRAM := Bool(true)
 
       state := s_fill_window_size_buffer_fill
@@ -298,7 +298,7 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
     is(s_fill_window_size_buffer_fill){
       //printf("7\n")
       val readAndFilteredFromBRAM = UInt((bramReadPort.rsp.readData >> wBufferFillLastCycleColBitInWord) & wBufferFillRemainMask, width=16)
-      printf("Appending %b to tempbuffer\n", readAndFilteredFromBRAM)
+      //printf("Appending %b to tempbuffer\n", readAndFilteredFromBRAM)
       val newTemp = (temporaryBuffer | (readAndFilteredFromBRAM << wBufferFillWritePosition))
       temporaryBuffer := newTemp
       wBufferFillWritePosition := wBufferFillWritePosition + wBufferFillLastStride
@@ -377,13 +377,13 @@ class SlidingWindow(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Modul
 
       state := s_fill_bram_start
       when(currInputChannel === io.numChannels - UInt(1)){ // Finished with all channels of a bitplane
-        printf("CurrChannel: %d\n", currInputChannel)
+        //printf("CurrChannel: %d\n", currInputChannel)
         currInputChannel := UInt(0)
         when(currInputBitplane === io.numBits - UInt(1)){ // Finished all bitplanes
           state := s_wait_for_writer_finish
         }.otherwise{
           currInputBitplane := currInputBitplane + UInt(1)
-          printf("CurrInPlanes : %d\n", currInputBitplane)
+          //printf("CurrInPlanes : %d\n", currInputBitplane)
         }
       }.otherwise{
         currInputChannel := currInputChannel + UInt(1)

@@ -40,6 +40,23 @@ class QBART(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
     /////// TODO: CONVOLUTION IO
 
+    val imageAddr = UInt(INPUT, width=64)
+    val filterAddr = UInt(INPUT, width=64)
+    val outputAddr = UInt(INPUT, width=64)
+    val tempAddr = UInt(INPUT, width=64)
+
+    val imageWidth = UInt(INPUT, width=32)
+    val imageHeight = UInt(INPUT, width=32)
+    val imageNumBits = UInt(INPUT, width=4)
+    val imageNumChannels = UInt(INPUT, width=16)
+
+    val strideExponent = UInt(INPUT, width=3)
+    val windowSize = UInt(INPUT, width=4)
+    val numOutputChannels = UInt(INPUT, width=16)
+
+    val filtersNumBits = UInt(INPUT, width=4)
+
+    val finishedWithSlidingWindow = Bool(OUTPUT)
 
     /////// TODO: THRESHOLDING IO
 
@@ -114,6 +131,37 @@ class QBART(p: PlatformWrapperParams) extends GenericAccelerator(p) {
   fc.rhs_issigned := io.rhs_issigned
   fc.num_chn := io.num_chn
 
+  val conv = Module(new Convolution(p, 64)).io
+
+  conv.start := Bool(false)
+  conv.imageAddr := io.imageAddr
+  conv.filterAddr := io.filterAddr
+  conv.outputAddr := io.outputAddr
+  conv.tempAddr := io.tempAddr
+
+  conv.imageWidth := io.imageWidth
+  conv.imageHeight := io.imageHeight
+  conv.imageNumBits := io.imageNumBits
+  conv.imageNumChannels := io.imageNumChannels
+
+  conv.strideExponent := io.strideExponent
+  conv.windowSize := io.windowSize
+  conv.numOutputChannels := io.numOutputChannels
+  conv.filtersNumBits := io.filtersNumBits
+
+  conv.reader0IF.out.valid := reader0.out.valid
+  conv.reader0IF.out.bits := reader0.out.bits
+  conv.reader0IF.finished := reader0.finished
+
+  conv.reader1IF.out.valid := reader1.out.valid
+  conv.reader1IF.out.bits := reader1.out.bits
+  conv.reader1IF.finished := reader1.finished
+
+  conv.writerIF.finished := writer.finished
+  conv.writerIF.in.ready := writer.in.ready
+  conv.writerIF.active := writer.active
+
+  io.finishedWithSlidingWindow := conv.finishedWithSlidingWindow
 
   // This state machine rewires readers/writers to running layers
 
@@ -156,7 +204,27 @@ class QBART(p: PlatformWrapperParams) extends GenericAccelerator(p) {
     }
     
     is (s_conv) {
-    
+      reader0.baseAddr := conv.reader0IF.baseAddr
+      reader0.byteCount := conv.reader0IF.byteCount
+      reader0.start := conv.reader0IF.start
+      reader0.out.ready := conv.reader0IF.out.ready
+
+      reader1.baseAddr := conv.reader1IF.baseAddr
+      reader1.byteCount := conv.reader1IF.byteCount
+      reader1.start := conv.reader1IF.start
+      reader1.out.ready := conv.reader1IF.out.ready
+
+      writer.baseAddr := conv.writerIF.baseAddr
+      writer.byteCount := conv.writerIF.byteCount
+      writer.start := conv.writerIF.start
+      writer.in.bits := conv.writerIF.in.bits
+      writer.in.valid := conv.writerIF.in.valid
+
+      conv.start := Bool(true)
+
+      when(conv.finished){
+        state := s_done
+      }
     }
     
     is (s_thresh) {

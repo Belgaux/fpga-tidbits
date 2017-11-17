@@ -40,27 +40,27 @@ class Convolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module 
     val start = Bool(INPUT)
     val finishedWithSlidingWindow = Bool(OUTPUT)
 
+    val reader0IF = new StreamReaderIF(wordSizeInBits, p.toMemReqParams()).flip
     val reader1IF = new StreamReaderIF(wordSizeInBits, p.toMemReqParams()).flip
-    val reader2IF = new StreamReaderIF(wordSizeInBits, p.toMemReqParams()).flip
     val writerIF = new StreamWriterIF(wordSizeInBits, p.toMemReqParams()).flip
 
     val finished = Bool(OUTPUT)
   }
 
+  val reader0 = io.reader1IF
   val reader1 = io.reader1IF
-  val reader2 = io.reader2IF
 
   val writer = io.writerIF
+
+  reader0.baseAddr := UInt(0)
+  reader0.byteCount := UInt(0)
+  reader0.out.ready := Bool(false)
+  reader0.start := Bool(false)
 
   reader1.baseAddr := UInt(0)
   reader1.byteCount := UInt(0)
   reader1.out.ready := Bool(false)
   reader1.start := Bool(false)
-
-  reader2.baseAddr := UInt(0)
-  reader2.byteCount := UInt(0)
-  reader2.out.ready := Bool(false)
-  reader2.start := Bool(false)
 
   writer.baseAddr := UInt(0)
   writer.byteCount := UInt(0)
@@ -167,15 +167,15 @@ class Convolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module 
     is (s_running_sliding_window) {
       windowSlider.start := Bool(true)
 
-      windowSlider.readerIF.out.bits := reader1.out.bits
-      windowSlider.readerIF.out.valid := reader1.out.valid
-      reader1.out.ready := windowSlider.readerIF.out.ready
+      windowSlider.readerIF.out.bits := reader0.out.bits
+      windowSlider.readerIF.out.valid := reader0.out.valid
+      reader0.out.ready := windowSlider.readerIF.out.ready
 
-      reader1.byteCount := windowSlider.readerIF.byteCount
-      reader1.baseAddr := windowSlider.readerIF.baseAddr
-      reader1.start := windowSlider.readerIF.start
-      windowSlider.readerIF.finished := reader1.finished
-      //reader1 <> windowSlider.readerIF // Apparently, this does not work
+      reader0.byteCount := windowSlider.readerIF.byteCount
+      reader0.baseAddr := windowSlider.readerIF.baseAddr
+      reader0.start := windowSlider.readerIF.start
+      windowSlider.readerIF.finished := reader0.finished
+      //reader0 <> windowSlider.readerIF // Apparently, this does not work
 
       writer.in.bits := windowSlider.writerIF.in.bits
       writer.in.valid := windowSlider.writerIF.in.valid
@@ -191,8 +191,8 @@ class Convolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module 
       when(windowSlider.finished){
         io.finishedWithSlidingWindow := Bool(true)
         writer.start := Bool(false)
+        reader0.start := Bool(false)
         reader1.start := Bool(false)
-        reader2.start := Bool(false)
         state := s_running_multiplication
       }
     }
@@ -202,25 +202,25 @@ class Convolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module 
       io.finishedWithSlidingWindow := Bool(true)
       multiplier.start := Bool(true)
 
-      multiplier.lhs_reader.out.bits := reader1.out.bits
-      multiplier.lhs_reader.out.valid := reader1.out.valid
-      reader1.out.ready := multiplier.lhs_reader.out.ready
+      multiplier.lhs_reader.out.bits := reader0.out.bits
+      multiplier.lhs_reader.out.valid := reader0.out.valid
+      reader0.out.ready := multiplier.lhs_reader.out.ready
 
-      reader1.byteCount := multiplier.lhs_reader.byteCount
-      reader1.baseAddr := multiplier.lhs_reader.baseAddr
-      reader1.start := multiplier.lhs_reader.start
-      multiplier.lhs_reader.finished := reader1.finished
-      //reader1 <> multiplier.lhs_reader
+      reader0.byteCount := multiplier.lhs_reader.byteCount
+      reader0.baseAddr := multiplier.lhs_reader.baseAddr
+      reader0.start := multiplier.lhs_reader.start
+      multiplier.lhs_reader.finished := reader0.finished
+      //reader0 <> multiplier.lhs_reader
 
-      multiplier.rhs_reader.out.bits := reader2.out.bits
-      multiplier.rhs_reader.out.valid := reader2.out.valid
-      reader2.out.ready := multiplier.rhs_reader.out.ready
+      multiplier.rhs_reader.out.bits := reader1.out.bits
+      multiplier.rhs_reader.out.valid := reader1.out.valid
+      reader1.out.ready := multiplier.rhs_reader.out.ready
 
-      reader2.byteCount := multiplier.rhs_reader.byteCount
-      reader2.baseAddr := multiplier.rhs_reader.baseAddr
-      reader2.start := multiplier.rhs_reader.start
-      multiplier.rhs_reader.finished := reader2.finished
-      //reader2 <> multiplier.rhs_reader
+      reader1.byteCount := multiplier.rhs_reader.byteCount
+      reader1.baseAddr := multiplier.rhs_reader.baseAddr
+      reader1.start := multiplier.rhs_reader.start
+      multiplier.rhs_reader.finished := reader1.finished
+      //reader1 <> multiplier.rhs_reader
 
       writer.in.bits := multiplier.writer.in.bits
       writer.in.valid := multiplier.writer.in.valid
@@ -232,6 +232,10 @@ class Convolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Module 
       multiplier.writer.finished := writer.finished
       multiplier.writer.active := writer.active
       //writer <> multiplier.writerIF
+
+      when(writer.in.ready && writer.in.valid){
+        printf("Writer data: %b\n", writer.in.bits)
+      }
 
       when(multiplier.done){
         state := s_finished
