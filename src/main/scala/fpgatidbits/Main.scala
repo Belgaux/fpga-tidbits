@@ -103,16 +103,6 @@ object MainObj {
 
 
   val accelMap: AccelMap  = Map(
-    "TestRegOps" -> {p => new TestRegOps(p)},
-    "TestSum" -> {p => new TestSum(p)},
-    "TestMultiChanSum" -> {p => new TestMultiChanSum(p)},
-    "TestSeqWrite" -> {p => new TestSeqWrite(p)},
-    "TestCopy" -> {p => new TestCopy(p)},
-    "TestRandomRead" -> {p => new TestRandomRead(p)},
-    "TestBRAM" -> {p => new TestBRAM(p)},
-    "TestBRAMMasked" -> {p => new TestBRAMMasked(p)},
-    "TestMemLatency" -> {p => new TestMemLatency(p)},
-    "TestGather" -> {p => new TestGather(p)},
     "QBART" -> {p => new QBART(p)}
   )
 
