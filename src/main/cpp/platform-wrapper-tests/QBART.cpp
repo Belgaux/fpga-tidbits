@@ -32,15 +32,15 @@ void Run_FullyConnected(WrapperRegDriver* platform)
 
 
   // loops for testing lots of matrices
-  for (int rr = 1; rr < 8; ++rr) {
-    for (int cc = 1; cc < 8; ++cc) {
+  for (int rr = 1; rr < 2; ++rr) {
+    for (int cc = 1; cc < 2; ++cc) {
 
     ////////////// GENERATING TEST MATRICES //////////
 
       int word_size = 64;
       
       int wr = rr;
-      int wc = 64*cc;
+      int wc = cc;
       int wd = 2;
       s64 W[wr*wc];
 
@@ -131,7 +131,7 @@ void Run_FullyConnected(WrapperRegDriver* platform)
       }
 
 
-#if 0
+#if 1
       // DEBUG PRINTING :D
       printf("W:\n");
       for (int i = 0; i < wr; ++i) {
@@ -147,6 +147,9 @@ void Run_FullyConnected(WrapperRegDriver* platform)
         }
         printf("\n");
       }
+#endif
+      
+#if 1
 
       printf("\nPACKED W:\n");
       for (int i = 0; i < WP_len; ++i) {
@@ -156,6 +159,7 @@ void Run_FullyConnected(WrapperRegDriver* platform)
       for (int i = 0; i < ATP_len; ++i)
         printf("%llu ", ATP[i]);
 #endif
+      
 #if 1
       printf("\nSoftware result:\n");
       for (int i = 0; i < wr; ++i) {
@@ -254,9 +258,9 @@ void print_lsb(uint8_t i){
 //Module takes in image of form channel/bitplane/row/column, outputs channel/row/column/bitplane convoluted image
 void Run_Convolution(WrapperRegDriver* platform) 
 {
-  //QBART t(platform);
-  
   //cout << "Signature: " << hex << t.get_signature() << dec << endl;
+
+  printf("\n\nStarting convolution \n");
   
   // Random generator
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
@@ -264,13 +268,13 @@ void Run_Convolution(WrapperRegDriver* platform)
 
   const int word_size_in_bits = 64;
     
-  const int num_input_channels = 3, num_output_channels = 9,
-    num_input_bitplanes = 4;
+  const int num_input_channels = 1, num_output_channels = 1,
+    num_input_bitplanes = 2;
     
-  const int image_width = 27, image_height = 27;
+  const int image_width = 1, image_height = 1;
 
-  const int window_size = 11, strideExponent = 2;
-  const int num_filter_bitplanes = 5;
+  const int window_size = 1, strideExponent = 0;
+  const int num_filter_bitplanes = 2;
 
   const int stride = 1 << strideExponent;
 
@@ -519,7 +523,7 @@ void Run_Convolution(WrapperRegDriver* platform)
 #endif
 
 
-#if 1
+#if 0
   printf("Packed filters (LSB): \n");
   for(int i = 0; i < num_filter_bitplanes; i++){
     printf("Bitplane %d:\n", i);
@@ -542,7 +546,7 @@ void Run_Convolution(WrapperRegDriver* platform)
 #endif
 
   
-#if 1
+#if 0
   uint8_t sliding_result[ws_size_in_bytes];
   platform->copyBufferAccelToHost(temp_buffer, sliding_result, ws_size_in_bytes);
   
@@ -621,7 +625,7 @@ void Run_Convolution(WrapperRegDriver* platform)
   }
 
   if(equal){
-    printf("The results were equal!\n");
+    printf("The results were equal!\n\n");
   }
 
   platform->deallocAccelBuffer(dram_image);
@@ -636,10 +640,10 @@ int main()
 
   QBART tt(platform);
   t = &tt;
-  
-  for(int i = 0; i < 4; i++){
-    Run_FullyConnected(platform);
+
+  for(int i = 0; i < 2; i++){
     Run_Convolution(platform);
+    Run_FullyConnected(platform);
   }
   
   deinitPlatform(platform);
