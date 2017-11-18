@@ -32,15 +32,15 @@ void Run_FullyConnected(WrapperRegDriver* platform)
 
 
   // loops for testing lots of matrices
-  for (int rr = 1; rr < 2; ++rr) {
-    for (int cc = 1; cc < 2; ++cc) {
+  for (int rr = 1; rr < 5; ++rr) {
+    for (int cc = 1; cc < 4; ++cc) {
 
     ////////////// GENERATING TEST MATRICES //////////
 
       int word_size = 64;
       
-      int wr = rr;
-      int wc = cc;
+      int wr = 23*rr;
+      int wc = 31*cc;
       int wd = 2;
       s64 W[wr*wc];
 
@@ -48,8 +48,8 @@ void Run_FullyConnected(WrapperRegDriver* platform)
       int ac = 1;
       int ad = 2;
 
-      printf("\nMatrix dim: W=(%d, %d) A=(%d, %d)\n", wr, wc, ar, ac);
-      printf("\nBit depths: %d, %d\n", wd, ad);
+      //printf("\nMatrix dim: W=(%d, %d) A=(%d, %d)\n", wr, wc, ar, ac);
+      //printf("\nBit depths: %d, %d\n", wd, ad);
 
       int out_rows = wr;
       int out_cols = ac;
@@ -131,7 +131,7 @@ void Run_FullyConnected(WrapperRegDriver* platform)
       }
 
 
-#if 1
+#if 0
       // DEBUG PRINTING :D
       printf("W:\n");
       for (int i = 0; i < wr; ++i) {
@@ -149,7 +149,7 @@ void Run_FullyConnected(WrapperRegDriver* platform)
       }
 #endif
       
-#if 1
+#if 0
 
       printf("\nPACKED W:\n");
       for (int i = 0; i < WP_len; ++i) {
@@ -160,7 +160,7 @@ void Run_FullyConnected(WrapperRegDriver* platform)
         printf("%llu ", ATP[i]);
 #endif
       
-#if 1
+#if 0
       printf("\nSoftware result:\n");
       for (int i = 0; i < wr; ++i) {
         for (int j = 0; j < ac; ++j) {
@@ -217,7 +217,7 @@ void Run_FullyConnected(WrapperRegDriver* platform)
       ////////////  NEED TO DO THIS IN SOFTWARE
       // numpy.transpose(matrix7, axes=(1, 0, 2)).tolist()
       ////////////
-#if 1
+#if 0
       printf("hardware_result:\n");
       for (int i = 0; i < out_len; ++i)
         printf("%lld ", hw_result_trans[i]);
@@ -268,13 +268,13 @@ void Run_Convolution(WrapperRegDriver* platform)
 
   const int word_size_in_bits = 64;
     
-  const int num_input_channels = 1, num_output_channels = 1,
-    num_input_bitplanes = 2;
+  const int num_input_channels = 3, num_output_channels = 4,
+    num_input_bitplanes = 6;
     
-  const int image_width = 1, image_height = 1;
+  const int image_width = 15, image_height = 19;
 
-  const int window_size = 1, strideExponent = 0;
-  const int num_filter_bitplanes = 2;
+  const int window_size = 11, strideExponent = 2;
+  const int num_filter_bitplanes = 3;
 
   const int stride = 1 << strideExponent;
 
@@ -469,7 +469,7 @@ void Run_Convolution(WrapperRegDriver* platform)
     }
   }
   
-#if 1
+#if 0
   printf("Image: \n");
   for(int i = 0; i < num_input_channels; i++){
     printf("Channel %d\n", i);
@@ -504,7 +504,7 @@ void Run_Convolution(WrapperRegDriver* platform)
 #endif
 
 
-#if 1
+#if 0
   printf("Filters: \n");
   for(int i = 0; i < num_output_channels; i++){
     printf("Output channel %d\n", i);
@@ -566,7 +566,7 @@ void Run_Convolution(WrapperRegDriver* platform)
 #endif
 
 
-#if 1
+#if 0
   printf("Expected result: \n");
   for(int c = 0; c < num_output_channels; c++){
     printf("Channel %d:\n", c);
@@ -598,7 +598,7 @@ void Run_Convolution(WrapperRegDriver* platform)
   printf("\n");
 #endif
 
-#if 1
+#if 0
   printf("Transposed accel result: \n");
   printf("Accel result: \n");
   for(int c = 0; c < num_output_channels; c++){
@@ -641,7 +641,7 @@ int main()
   QBART tt(platform);
   t = &tt;
 
-  for(int i = 0; i < 2; i++){
+  for(int i = 0; i < 4; i++){
     Run_Convolution(platform);
     Run_FullyConnected(platform);
   }
