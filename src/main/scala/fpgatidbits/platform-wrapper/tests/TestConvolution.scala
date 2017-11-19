@@ -128,7 +128,7 @@ class TestConvolution(p: PlatformWrapperParams, _wordSizeInBits:Int) extends Gen
   windowSlider.start := Bool(false)
 
 
-  val multiplier = Module(new ModuleBinaryGEMMOptimized(p, wordSizeInBits)).io
+  val multiplier = Module(new ModuleBinaryGEMM(p, wordSizeInBits)).io
   multiplier.lhs_addr := io.filterAddr
   multiplier.rhs_addr := io.tempAddr
   multiplier.res_addr := io.outputAddr

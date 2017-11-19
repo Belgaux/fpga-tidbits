@@ -40,13 +40,13 @@ void Run_TestConvolution(WrapperRegDriver* platform)
 
   const int word_size_in_bits = 64;
     
-  const int num_input_channels = 5, num_output_channels = 3,
-    num_input_bitplanes = 5;
+  const int num_input_channels = 1, num_output_channels = 1,
+    num_input_bitplanes = 1;
     
-  const int image_width = 23, image_height = 27;
+  const int image_width = 131, image_height = 131;
 
   const int window_size = 11, strideExponent = 2;
-  const int num_filter_bitplanes = 3;
+  const int num_filter_bitplanes = 1;
 
   const int stride = 1 << strideExponent;
 
